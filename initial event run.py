@@ -26,7 +26,7 @@ st.title("Burdy Business Event Finder")
 st.write("Find all local events in your area")
 
 postcode = st.text_input("Enter postcode")
-radius = st.slider("Search radius (miles)", min_value=1, max_value=100, value=25)
+radius = st.slider("Search radius (miles)", min_value=1, max_value=100, value=10)
 
 if st.button("Search Events"):
     if not postcode:
