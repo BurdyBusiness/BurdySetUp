@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 # -----------------------------
 # CONFIG
 # -----------------------------
-st.write("Secrets loaded:", list(st.secrets.keys()))
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 TM_BASE_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
