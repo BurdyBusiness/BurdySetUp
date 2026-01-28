@@ -22,8 +22,8 @@ MONTHS_AHEAD = 24      # how far into future to search
 # -----------------------------
 st.set_page_config(page_title="Ticketmaster Event Finder", layout="centered")
 
-st.title("🎟️ Ticketmaster Event Finder")
-st.write("Pull **all events** by looping through date windows.")
+st.title("Burdy Business Event Finder")
+st.write("Find all local events in your area")
 
 postcode = st.text_input("Enter postcode")
 radius = st.slider("Search radius (miles)", min_value=1, max_value=100, value=25)
