@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 # -----------------------------
 # CONFIG
 # -----------------------------
+st.write("Secrets loaded:", list(st.secrets.keys()))
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 TM_BASE_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
@@ -22,11 +23,11 @@ MONTHS_AHEAD = 24      # how far into future to search
 # -----------------------------
 st.set_page_config(page_title="Ticketmaster Event Finder", layout="centered")
 
-st.title("Burdy Business Event Finder")
-st.write("Find all local events in your area")
+st.title("🎟️ Ticketmaster Event Finder")
+st.write("Pull **all events** by looping through date windows.")
 
 postcode = st.text_input("Enter postcode")
-radius = st.slider("Search radius (miles)", min_value=1, max_value=100, value=10)
+radius = st.slider("Search radius (miles)", min_value=1, max_value=100, value=25)
 
 if st.button("Search Events"):
     if not postcode:
@@ -101,14 +102,28 @@ if st.button("Search Events"):
                 event_id = event.get("id")
                 venue = event["_embedded"]["venues"][0]
 
-                events[event_id] = {
-                    "name": event.get("name"),
-                    "date": event.get("dates", {}).get("start", {}).get("localDate"),
-                    "time": event.get("dates", {}).get("start", {}).get("localTime"),
-                    "venue": venue.get("name"),
-                    "city": venue.get("city", {}).get("name"),
-                    "url": event.get("url"),
-                }
+                classification = (
+                    event.get("classifications", [{}])[0]
+                    .get("segment", {})
+                    .get("name")
+                )
+
+                sale_status = (
+                    event.get("dates", {})
+                    .get("status", {})
+                    .get("code")
+                )
+
+    events[event_id] = {
+        "name": event.get("name"),
+        "event_type": classification,
+        "sale_status": sale_status,
+        "date": event.get("dates", {}).get("start", {}).get("localDate"),
+        "time": event.get("dates", {}).get("start", {}).get("localTime"),
+        "venue": venue.get("name"),
+        "city": venue.get("city", {}).get("name"),
+        "url": event.get("url"),
+    }
 
     page += 1
     time.sleep(0.2)
