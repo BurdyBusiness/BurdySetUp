@@ -5,9 +5,6 @@ import io
 import time
 from datetime import datetime, timedelta, UTC
 
-# Disable file watcher to avoid inotify limit
-st.set_option('server.fileWatcherType', 'none')
-
 # -----------------------------
 # CONFIG
 # -----------------------------
