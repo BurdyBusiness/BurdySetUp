@@ -101,28 +101,14 @@ if st.button("Search Events"):
                 event_id = event.get("id")
                 venue = event["_embedded"]["venues"][0]
 
-                classification = (
-                    event.get("classifications", [{}])[0]
-                    .get("segment", {})
-                    .get("name")
-                )
-
-                sale_status = (
-                    event.get("dates", {})
-                    .get("status", {})
-                    .get("code")
-                )
-
-    events[event_id] = {
-        "name": event.get("name"),
-        "event_type": classification,
-        "sale_status": sale_status,
-        "date": event.get("dates", {}).get("start", {}).get("localDate"),
-        "time": event.get("dates", {}).get("start", {}).get("localTime"),
-        "venue": venue.get("name"),
-        "city": venue.get("city", {}).get("name"),
-        "url": event.get("url"),
-    }
+                events[event_id] = {
+                    "name": event.get("name"),
+                    "date": event.get("dates", {}).get("start", {}).get("localDate"),
+                    "time": event.get("dates", {}).get("start", {}).get("localTime"),
+                    "venue": venue.get("name"),
+                    "city": venue.get("city", {}).get("name"),
+                    "url": event.get("url"),
+                }
 
     page += 1
     time.sleep(0.2)
