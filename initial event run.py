@@ -101,18 +101,14 @@ if st.button("Search Events"):
             data = response.json()
             total_pages = min(data.get("page", {}).get("totalPages", 1), MAX_PAGES)
 
-            for event in data.get("_embedded", {}).get("events", []):
+for event in data.get("_embedded", {}).get("events", []):
     venues = event.get("_embedded", {}).get("venues", [])
     if not venues:
         continue
     venue = venues[0]
 
     event_id = event.get("id")
-    event_type = event.get("type")  # <-- Event type
-
     events[event_id] = {
-        "id": event_id,             # <-- Event ID
-        "type": event_type,         # <-- Event type
         "name": event.get("name"),
         "date": event.get("dates", {}).get("start", {}).get("localDate"),
         "time": event.get("dates", {}).get("start", {}).get("localTime"),
