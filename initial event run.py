@@ -3,7 +3,7 @@ import requests
 import csv
 import io
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 # -----------------------------
 # CONFIG
@@ -50,7 +50,7 @@ if st.button("Search Events"):
     # -----------------------------
     # DATE WINDOWS
     # -----------------------------
-    start_date = datetime.utcnow()
+    start_date = datetime.now(UTC)
     end_date = start_date + timedelta(days=WINDOW_DAYS)
     final_date = start_date + timedelta(days=30 * MONTHS_AHEAD)
 
