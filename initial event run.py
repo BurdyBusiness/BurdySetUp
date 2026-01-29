@@ -111,7 +111,10 @@ if st.button("Search Events"):
                 venue = venues[0]
 
                 event_id = event.get("id")
-                event_type = event.get("type")
+                if 'classifications' in event and len(event['classifications']) > 0:
+                    event_type = event['classifications'][0].get('segment', {}).get('name', '')
+                else:
+                    event_type = 'Unknown'
 
                 events[event_id] = {
                     "id": event_id,
