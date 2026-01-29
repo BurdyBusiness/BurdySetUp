@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 TM_BASE_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
-LOGO_PATH = r"C:\Users\user\OneDrive\Documents\Business\Colour Logo.png"
 
 MAX_PAGES = 5          # Ticketmaster hard limit
 PAGE_SIZE = 200
@@ -22,7 +21,6 @@ MONTHS_AHEAD = 24      # how far into future to search
 # STREAMLIT UI
 # -----------------------------
 st.set_page_config(page_title="Ticketmaster Event Finder", layout="centered")
-st.image(LOGO_PATH, width=100)
 st.title("Burdy Business Event Finder")
 st.write("Find all local events in your area")
 
