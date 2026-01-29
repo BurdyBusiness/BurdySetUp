@@ -102,20 +102,24 @@ if st.button("Search Events"):
             total_pages = min(data.get("page", {}).get("totalPages", 1), MAX_PAGES)
 
             for event in data.get("_embedded", {}).get("events", []):
-                venues = event.get("_embedded", {}).get("venues", [])
-                if not venues:
-                    continue
-                venue = venues[0]
+    venues = event.get("_embedded", {}).get("venues", [])
+    if not venues:
+        continue
+    venue = venues[0]
 
-                event_id = event.get("id")
-                events[event_id] = {
-                    "name": event.get("name"),
-                    "date": event.get("dates", {}).get("start", {}).get("localDate"),
-                    "time": event.get("dates", {}).get("start", {}).get("localTime"),
-                    "venue": venue.get("name"),
-                    "city": venue.get("city", {}).get("name"),
-                    "url": event.get("url"),
-                }
+    event_id = event.get("id")
+    event_type = event.get("type")  # <-- Event type
+
+    events[event_id] = {
+        "id": event_id,             # <-- Event ID
+        "type": event_type,         # <-- Event type
+        "name": event.get("name"),
+        "date": event.get("dates", {}).get("start", {}).get("localDate"),
+        "time": event.get("dates", {}).get("start", {}).get("localTime"),
+        "venue": venue.get("name"),
+        "city": venue.get("city", {}).get("name"),
+        "url": event.get("url"),
+    }
 
             page += 1
             time.sleep(0.2)
