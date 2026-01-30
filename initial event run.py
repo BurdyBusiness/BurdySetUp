@@ -117,13 +117,13 @@ if st.button("Search Events"):
                     event_type = 'Unknown'
 
                 events[event_id] = {
-                    "date": event.get("dates", {}).get("start", {}).get("localDate"),
-                    "name": event.get("name"),
-                    "time": event.get("dates", {}).get("start", {}).get("localTime"),
-                    "venue": venue.get("name"),
-                    "type": event_type,
-                    "city": venue.get("city", {}).get("name"),
-                    "id": event_id,
+                    "Date": event.get("dates", {}).get("start", {}).get("localDate"),
+                    "Name": event.get("name"),
+                    "Time": event.get("dates", {}).get("start", {}).get("localTime"),
+                    "Venue": venue.get("name"),
+                    "Type": event_type,
+                    "City": venue.get("city", {}).get("name"),
+                    "ID": event_id,
                     "url": event.get("url"),
                 }
 
