@@ -125,6 +125,9 @@ if st.button("Search Events"):
                     "City": venue.get("city", {}).get("name"),
                     "ID": event_id,
                     "url": event.get("url"),
+                    "PostalCode": venue.get("postalCode"),  # gets the venue's postcode
+                    "Latitude": venue.get("location", {}).get("latitude"),  # gets latitude
+                    "Longitude": venue.get("location", {}).get("longitude"),  # gets longitude,
                 }
 
             page += 1
