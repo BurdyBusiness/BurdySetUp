@@ -120,7 +120,7 @@ if st.button("Search Events"):
                     "Date": event.get("dates", {}).get("start", {}).get("localDate"),
                     "Name": event.get("name"),
                     "Time": event.get("dates", {}).get("start", {}).get("localTime"),
-                    "Venue": venue.get("name"),
+                    "Venue Name": venue.get("name"),
                     "Type": event_type,
                     "City": venue.get("city", {}).get("name"),
                     "ID": event_id,
