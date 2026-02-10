@@ -3,6 +3,7 @@ import requests
 import csv
 import io
 import time
+import pandas as pd
 from datetime import datetime, timedelta, timezone
 
 # -----------------------------
@@ -128,6 +129,7 @@ if st.button("Search Events"):
                     "PostalCode": venue.get("postalCode"),  # gets the venue's postcode
                     "Latitude": venue.get("location", {}).get("latitude"),  # gets latitude
                     "Longitude": venue.get("location", {}).get("longitude"),  # gets longitude,
+                    "Created At": pd.Timestamp.now(),
                 }
 
             page += 1
