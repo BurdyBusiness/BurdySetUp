@@ -1,7 +1,4 @@
 streamlit
 pandas
 requests
-
 supabase==2.3.4
-gotrue==2.10.0
-httpx==0.26.0
