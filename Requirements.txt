@@ -1,4 +1,4 @@
 streamlit
 pandas
 requests
-supabase
+supabase>=2.0.0
