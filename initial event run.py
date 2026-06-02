@@ -5,6 +5,7 @@ import io
 import time
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+from supabase import create_client
 
 # -----------------------------
 # CONFIG
@@ -12,6 +13,13 @@ from datetime import datetime, timedelta, timezone
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 TM_BASE_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 
 MAX_PAGES = 5          # Ticketmaster hard limit
 PAGE_SIZE = 200
@@ -141,6 +149,82 @@ if st.button("Search Events"):
         progress.progress(min(window_count / total_windows, 1.0))
 
     status.text("Done!")
+
+    # -----------------------------
+# SUPABASE UPLOAD
+# -----------------------------
+
+rows = list(events.values())
+
+if rows:
+
+    progress_text = st.empty()
+    progress_text.info(f"Uploading {len(rows)} events to Supabase...")
+
+    batch_size = 500
+    uploaded = 0
+
+    for i in range(0, len(rows), batch_size):
+
+        batch = rows[i:i + batch_size]
+
+        payload = []
+
+        for row in batch:
+
+            payload.append({
+                "ID": str(row["ID"]),
+                "Date": row["Date"],
+                "Name": row["Name"],
+                "Time": row["Time"],
+                "Venue Name": row["Venue Name"],
+                "Type": row["Type"],
+                "City": row["City"],
+                "url": row["url"],
+                "PostalCode": row["PostalCode"],
+                "Latitude": float(row["Latitude"]) if row["Latitude"] else None,
+                "Longitude": float(row["Longitude"]) if row["Longitude"] else None,
+                "Created At": datetime.now().isoformat()
+            })
+
+        try:
+
+            (
+                supabase
+                .table("BurdySteupTest")
+                .upsert(
+                    payload,
+                    on_conflict="ID"
+                )
+                .execute()
+            )
+
+            uploaded += len(batch)
+
+        except Exception as e:
+
+            st.error(
+                f"Supabase upload failed after "
+                f"{uploaded} rows.\n\n{e}"
+            )
+
+            st.stop()
+
+    progress_text.success(
+        f"Uploaded {uploaded} records to Supabase"
+    )
+
+    count_result = (
+        supabase
+        .table("BurdySteupTest")
+        .select("ID", count="exact")
+        .execute()
+    )
+
+    st.info(
+        f"Database now contains "
+        f"{count_result.count:,} events"
+    )
 
     if not events:
         st.info("No events found.")
