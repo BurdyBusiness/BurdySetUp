@@ -34,26 +34,45 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # =====================================================
 
 st.title("Burdy Business Event Finder")
-st.write("Find local events using Ticketmaster")
+st.write("Ticketmaster → Supabase Event Pipeline")
 
 postcode = st.text_input("Enter postcode")
 radius = st.slider("Search radius (miles)", 1, 100, 10)
 
 # =====================================================
-# FETCH DATABASE FUNCTION
+# LOAD FULL DATABASE (FIXED PAGINATION)
 # =====================================================
 
 def load_database():
-    response = (
-        supabase
-        .table("BurdySteupTest")
-        .select("*")
-        .execute()
-    )
-    return response.data
+    all_rows = []
+    limit = 1000
+    offset = 0
+
+    while True:
+        response = (
+            supabase
+            .table("BurdySteupTest")
+            .select("*")
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
+        data = response.data or []
+
+        if not data:
+            break
+
+        all_rows.extend(data)
+
+        if len(data) < limit:
+            break
+
+        offset += limit
+
+    return all_rows
 
 # =====================================================
-# SEARCH + SYNC BUTTON
+# SYNC BUTTON
 # =====================================================
 
 if st.button("Sync Events from Ticketmaster"):
@@ -65,7 +84,7 @@ if st.button("Sync Events from Ticketmaster"):
     clean_postcode = postcode.replace(" ", "").upper()
 
     # -----------------------------
-    # GET LAT/LON
+    # GEO LOOKUP
     # -----------------------------
     geo = requests.get(POSTCODE_API.format(clean_postcode)).json()
 
@@ -77,7 +96,21 @@ if st.button("Sync Events from Ticketmaster"):
     lon = geo["result"]["longitude"]
 
     # -----------------------------
-    # TIME RANGE
+    # GET EXISTING IDS (FOR NEW DETECTION)
+    # -----------------------------
+    existing_ids_response = (
+        supabase
+        .table("BurdySteupTest")
+        .select("ID")
+        .execute()
+    )
+
+    existing_ids = set(
+        item["ID"] for item in (existing_ids_response.data or [])
+    )
+
+    # -----------------------------
+    # SEARCH SETUP
     # -----------------------------
     start_date = datetime.now(timezone.utc)
     final_date = start_date + timedelta(days=30 * MONTHS_AHEAD)
@@ -91,7 +124,7 @@ if st.button("Sync Events from Ticketmaster"):
     window_count = 0
 
     # -----------------------------
-    # TICKETMASTER FETCH
+    # TICKETMASTER LOOP
     # -----------------------------
     while start_date < final_date:
 
@@ -99,8 +132,7 @@ if st.button("Sync Events from Ticketmaster"):
         window_count += 1
 
         status.text(
-            f"Syncing {window_count}/{total_windows} "
-            f"({start_date.date()} → {end_date.date()})"
+            f"Scanning window {window_count}/{total_windows}"
         )
 
         page = 0
@@ -120,11 +152,7 @@ if st.button("Sync Events from Ticketmaster"):
                 "endDateTime": end_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
 
-            try:
-                response = requests.get(TM_BASE_URL, params=params, timeout=15)
-            except requests.RequestException as e:
-                st.error(f"Ticketmaster error: {e}")
-                st.stop()
+            response = requests.get(TM_BASE_URL, params=params, timeout=15)
 
             if response.status_code == 429:
                 time.sleep(2)
@@ -132,7 +160,6 @@ if st.button("Sync Events from Ticketmaster"):
 
             if response.status_code != 200:
                 st.error(f"Ticketmaster error {response.status_code}")
-                st.code(response.text)
                 st.stop()
 
             data = response.json()
@@ -152,10 +179,14 @@ if st.button("Sync Events from Ticketmaster"):
                 event_id = event.get("id")
 
                 classifications = event.get("classifications", [])
-                event_type = "Unknown"
+                event_type = (
+                    classifications[0]
+                    .get("segment", {})
+                    .get("name", "Unknown")
+                    if classifications else "Unknown"
+                )
 
-                if classifications:
-                    event_type = classifications[0].get("segment", {}).get("name", "Unknown")
+                is_new = event_id not in existing_ids
 
                 events[event_id] = {
                     "ID": event_id,
@@ -169,6 +200,7 @@ if st.button("Sync Events from Ticketmaster"):
                     "Latitude": venue.get("location", {}).get("latitude"),
                     "Longitude": venue.get("location", {}).get("longitude"),
                     "url": event.get("url"),
+                    "Is New": is_new,
                     "Created At": datetime.now(timezone.utc).isoformat()
                 }
 
@@ -181,20 +213,24 @@ if st.button("Sync Events from Ticketmaster"):
     status.success("Sync complete")
 
     # -----------------------------
-    # UPSERT INTO SUPABASE
+    # UPLOAD TO SUPABASE
     # -----------------------------
-    if events:
+    rows = list(events.values())
 
-        rows = list(events.values())
+    new_rows = [r for r in rows if r["Is New"]]
 
-        upload_status = st.info(f"Uploading {len(rows)} events to database...")
+    st.info(f"Found {len(rows)} events")
+    st.success(f"New events to insert: {len(new_rows)}")
+
+    if new_rows:
 
         batch_size = 500
         uploaded = 0
 
         try:
-            for i in range(0, len(rows), batch_size):
-                batch = rows[i:i + batch_size]
+            for i in range(0, len(new_rows), batch_size):
+
+                batch = new_rows[i:i + batch_size]
 
                 supabase.table("BurdySteupTest").upsert(
                     batch,
@@ -203,17 +239,14 @@ if st.button("Sync Events from Ticketmaster"):
 
                 uploaded += len(batch)
 
-            upload_status.success(f"Synced {uploaded} events")
+            st.success(f"Uploaded {uploaded} new events")
 
         except Exception as e:
             st.error(f"Supabase upload failed:\n{e}")
             st.stop()
 
-    else:
-        st.info("No new events found.")
-
 # =====================================================
-# ALWAYS LOAD DATABASE (MAIN DISPLAY)
+# ALWAYS DISPLAY FULL DATABASE
 # =====================================================
 
 db_rows = load_database()
@@ -224,5 +257,5 @@ if not db_rows:
 
 df = pd.DataFrame(db_rows)
 
-st.subheader("All Events in Database")
+st.subheader("All Events in Supabase Database")
 st.dataframe(df, use_container_width=True)
