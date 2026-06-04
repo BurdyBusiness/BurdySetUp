@@ -19,7 +19,7 @@ st.set_page_config(
 
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+SUPABASE_KEY = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 
 TM_BASE_URL = "https://app.ticketmaster.com/discovery/v2/events.json"
 POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
