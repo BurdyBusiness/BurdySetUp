@@ -634,77 +634,49 @@ if find_events:
     status.empty()
     progress.empty()
 
-    # ── Animated completion metrics ──
-    completion = st.empty()
-    completion.markdown(f"""
+    st.markdown(f"""
     <style>
-    @keyframes fadeOut {{
-        0%   {{ opacity: 1; transform: translateY(0); }}
-        70%  {{ opacity: 1; transform: translateY(0); }}
-        100% {{ opacity: 0; transform: translateY(-8px); }}
-    }}
-    .completion-bar {{
+    .stat-row {{
         display: flex;
-        gap: 16px;
-        animation: fadeOut 4s ease forwards;
-    }}
-    .c-card {{
-        flex: 1;
-        background: #fff;
-        border: 1px solid rgba(0,0,0,.09);
-        border-radius: 14px;
-        padding: 20px 24px;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 2px 10px rgba(0,0,0,.05);
-    }}
-    .c-card::after {{
-        content: '';
-        position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
-    }}
-    .c-card.orange::after {{ background: linear-gradient(90deg, #E8520A, transparent); }}
-    .c-card.green::after  {{ background: linear-gradient(90deg, #179948, transparent); }}
-    .c-card.blue::after   {{ background: linear-gradient(90deg, #2563EB, transparent); }}
-    .c-label {{
-        font-family: 'DM Mono', monospace;
-        font-size: 10px; color: #6B7280;
-        letter-spacing: .1em; text-transform: uppercase;
+        gap: 12px;
         margin-bottom: 8px;
     }}
-    .c-value {{
-        font-family: 'Syne', sans-serif;
-        font-weight: 800; font-size: 32px;
-        letter-spacing: -.03em;
-    }}
-    .c-card.orange .c-value {{ color: #E8520A; }}
-    .c-card.green  .c-value {{ color: #179948; }}
-    .c-card.blue   .c-value {{ color: #2563EB; }}
-    .c-sub {{
+    .stat-box {{
+        flex: 1;
+        background: transparent;
+        border: 1px solid rgba(0,0,0,.09);
+        border-radius: 10px;
+        padding: 16px 20px;
+        text-align: center;
         font-family: 'DM Sans', sans-serif;
-        font-size: 12px; color: #A0A7B4;
-        margin-top: 4px;
+    }}
+    .stat-num {{
+        font-size: 28px;
+        font-weight: 700;
+        color: #141518;
+        margin-bottom: 4px;
+    }}
+    .stat-label {{
+        font-size: 12px;
+        color: #6B7280;
+        font-weight: 400;
     }}
     </style>
-
-    <div class="completion-bar">
-      <div class="c-card green">
-        <div class="c-label">New Events Added</div>
-        <div class="c-value">{after_total - before_total}</div>
-        <div class="c-sub">synced from Ticketmaster</div>
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="stat-num">{after_total - before_total}</div>
+        <div class="stat-label">New Events Added</div>
       </div>
-      <div class="c-card orange">
-        <div class="c-label">Nearby Events</div>
-        <div class="c-value">{after_radius_count}</div>
-        <div class="c-sub">within {radius} miles of {postcode.upper()}</div>
+      <div class="stat-box">
+        <div class="stat-num">{after_radius_count}</div>
+        <div class="stat-label">Nearby Events within {radius} miles</div>
       </div>
-      <div class="c-card blue">
-        <div class="c-label">Total Database</div>
-        <div class="c-value">{after_total}</div>
-        <div class="c-sub">events indexed</div>
+      <div class="stat-box">
+        <div class="stat-num">{after_total}</div>
+        <div class="stat-label">Total Events in Database</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
-
 # =====================================================
 # SEARCH VIEW
 # =====================================================
