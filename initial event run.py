@@ -293,6 +293,7 @@ h3 {
 }
 @media (max-width: 768px) {
     .burdy-footer {
+        position: static;
         padding: 10px 1rem;
         flex-direction: column;
         align-items: flex-start;
