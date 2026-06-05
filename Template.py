@@ -481,16 +481,16 @@ st.markdown(f"""
   </div>
   <div class="ticker-wrap">
     <div class="ticker-track">
-      <span class="ticker-item">Ticketmaster Discovery v2</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">Supabase Live Sync</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">PostCodes.io Geolocation</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">24 Months Event Coverage</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">UK Events Only</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">Ticketmaster Discovery v2</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">Supabase Live Sync</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">PostCodes.io Geolocation</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">24 Months Event Coverage</span><span class="ticker-sep">◆</span>
-      <span class="ticker-item">UK Events Only</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Most searched event/span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Biggest hotel demand</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Biggest 24 hour growth</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Newest event announced</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Biggest travel disruption</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Hospitality news</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Highest revenue event</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Newest venue announcement</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Most viewed event</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Weather impacts expected</span><span class="ticker-sep">◆</span>
     </div>
   </div>
   <div class="live-badge">
@@ -499,6 +499,7 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # =====================================================
 # CONTROL CARD
@@ -691,14 +692,13 @@ components.html("""
   </div>
 
   <div class="centre">
-    <div class="pill">&#9670; &nbsp;Event Intelligence Platform</div>
     <div class="headline">Multiple Business Intelligence Models.<br>On one platform.</div>
     <div class="body-text">
-      Burdy transforms real-world events into demand signals — so your pricing, staffing, and operations are always ahead of the curve. Every signal on one platform. From concerts to school holidays, we connect you to over 20,000 events to your business outcomes in real time."
+      Burdy transforms real-world events into demand signals — so your pricing, staffing, and operations are always ahead of the curve. Every signal on one platform. From concerts to school holidays, we connect your business to over 20,000 events in real time.
     </div>
     <div class="stats">
       <div style="text-align:center;">
-        <div class="stat-val">2 Sources</div>
+        <div class="stat-val">Multi-source</div>
         <div class="stat-lbl">Live API feeds</div>
       </div>
       <div class="divider"></div>
@@ -709,7 +709,7 @@ components.html("""
       <div class="divider"></div>
       <div style="text-align:center;">
         <div class="stat-val">Real-time</div>
-        <div class="stat-lbl">Supabase sync</div>
+        <div class="stat-lbl">Database sync</div>
       </div>
       <div class="divider"></div>
       <div style="text-align:center;">
@@ -725,10 +725,249 @@ components.html("""
 
 </div>
 
-<div style="font-family:'DM Sans',sans-serif;font-weight:700;font-size:20px;
-  letter-spacing:-.02em;color:#141518;margin:20px 0 8px;text-align:center;">
-  How it works
+<div style="display:flex;justify-content:center;gap:12px;margin:24px 0 8px;flex-wrap:wrap;">
+  <a href="#" style="
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
+    letter-spacing:.06em;text-transform:uppercase;text-decoration:none;
+    padding:11px 22px;border-radius:8px;
+    background:#ffffff;color:#E8520A;
+    border:1px solid rgba(232,82,10,.35);
+    box-shadow:0 2px 8px rgba(232,82,10,.1);
+    transition:all .2s;"
+    onmouseover="this.style.background='rgba(232,82,10,.06)';this.style.borderColor='#E8520A'"
+    onmouseout="this.style.background='#ffffff';this.style.borderColor='rgba(232,82,10,.35)'">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0">
+      <circle cx="7" cy="7" r="6.5" stroke="#E8520A" stroke-width="1"/>
+      <polygon points="5.5,4.5 10,7 5.5,9.5" fill="#E8520A"/>
+    </svg>
+    Watch 3 min demo
+  </a>
+  <a href="#" style="
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
+    letter-spacing:.06em;text-transform:uppercase;text-decoration:none;
+    padding:11px 22px;border-radius:8px;
+    background:#E8520A;color:#ffffff;
+    border:1px solid #E8520A;
+    box-shadow:0 3px 14px rgba(232,82,10,.25);
+    transition:all .2s;"
+    onmouseover="this.style.background='#c94308';this.style.boxShadow='0 5px 20px rgba(232,82,10,.35)'"
+    onmouseout="this.style.background='#E8520A';this.style.boxShadow='0 3px 14px rgba(232,82,10,.25)'">
+    Try for free
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0">
+      <path d="M2 6h8M7 3l3 3-3 3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </a>
 </div>
+""", height=520, scrolling=False)
+
+
+# =====================================================
+# HOW IT WORKS
+# =====================================================
+
+components.html("""
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+    --orange:      #E8520A;
+    --orange-dim:  #c94308;
+    --orange-glow: rgba(232,82,10,.12);
+    --green:       #179948;
+    --green-glow:  rgba(23,153,72,.12);
+    --bg:          #F4F5F7;
+    --surface:     #FFFFFF;
+    --surface2:    #F0F1F4;
+    --border:      rgba(0,0,0,.09);
+    --text:        #141518;
+    --text-dim:    #6B7280;
+    --text-muted:  #A0A7B4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--text); overflow: hidden; }
+
+.how-section { padding: 40px 0 32px; }
+.how-inner { display: flex; gap: 48px; align-items: flex-start; }
+.how-left { flex: 1; min-width: 0; }
+.how-right { width: 340px; flex-shrink: 0; }
+
+.how-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 10px;
+}
+.how-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 26px; letter-spacing: -.03em;
+    color: var(--text); line-height: 1.2; margin-bottom: 28px;
+}
+.how-title em { font-style: italic; color: var(--orange); }
+.how-steps { display: flex; flex-direction: column; gap: 4px; }
+.how-step {
+    display: flex; gap: 16px; padding: 16px 18px;
+    border-radius: 12px; border: 1px solid transparent;
+    cursor: pointer; transition: all .18s; background: transparent; position: relative;
+}
+.how-step.active {
+    background: var(--surface); border-color: var(--border);
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+.how-step.active::before {
+    content: ''; position: absolute;
+    left: 0; top: 12px; bottom: 12px; width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: linear-gradient(180deg, var(--orange), var(--green));
+}
+.how-step:hover:not(.active) { background: var(--surface2); }
+.step-num {
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500;
+    color: var(--text-muted); min-width: 24px; padding-top: 2px;
+}
+.how-step.active .step-num { color: var(--orange); }
+.step-title {
+    font-family: 'Syne', sans-serif; font-weight: 700;
+    font-size: 14px; letter-spacing: -.01em; color: var(--text); margin-bottom: 4px;
+}
+.step-desc { font-size: 13px; line-height: 1.55; color: var(--text-dim); display: none; }
+.how-step.active .step-desc { display: block; }
+
+.pipe-nodes { display: flex; flex-direction: column; }
+.pipe-node {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px;
+    position: relative; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    transition: box-shadow .2s, border-color .2s;
+}
+.pipe-node.pipe-active {
+    border-color: rgba(232,82,10,.35);
+    box-shadow: 0 4px 16px var(--orange-glow);
+}
+.pipe-node::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.pipe-node-0::before { background: linear-gradient(90deg, var(--orange), var(--green), transparent); }
+.pipe-node-1::before { background: linear-gradient(90deg, var(--green), var(--orange), transparent); }
+.pipe-node-2::before { background: linear-gradient(90deg, var(--orange), transparent); }
+.pipe-node-3::before { background: linear-gradient(90deg, var(--green), transparent); }
+.pipe-node-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--text); margin-bottom: 3px; }
+.pipe-node-sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); letter-spacing: .04em; }
+.pipe-connector { display: flex; flex-direction: column; align-items: center; padding: 2px 0; }
+.pipe-line { width: 2px; height: 20px; background: linear-gradient(180deg, var(--orange), var(--green)); opacity: .4; }
+.pipe-arrow { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--green); opacity: .5; }
+.pipe-dots { display: flex; gap: 5px; margin-top: 6px; }
+.pipe-dot { width: 7px; height: 7px; border-radius: 50%; }
+.pipe-bars { display: flex; align-items: flex-end; gap: 3px; height: 20px; margin-top: 6px; }
+.pipe-bars span { width: 5px; border-radius: 2px 2px 0 0; background: var(--green); }
+.pipe-pulse { display: flex; gap: 6px; margin-top: 6px; }
+.pipe-pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); animation: ppulse 1.5s infinite; }
+.pipe-pulse-dot:nth-child(2) { animation-delay: .3s; }
+.pipe-pulse-dot:nth-child(3) { animation-delay: .6s; }
+@keyframes ppulse { 0%,100%{opacity:.7;transform:scale(1);}50%{opacity:.25;transform:scale(1.4);} }
+.pipe-loop { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--orange); letter-spacing: .04em; margin-top: 6px; }
+
+@media (max-width: 640px) {
+    .how-inner { flex-direction: column; }
+    .how-right { width: 100%; }
+    .how-title { font-size: 20px; }
+}
+</style>
+
+<div class="how-section">
+  <div class="how-inner">
+    <div class="how-left">
+      <p class="how-label">How it works</p>
+      <h2 class="how-title">From raw events to<br><em>confident action</em></h2>
+      <div class="how-steps">
+        <div class="how-step active" onclick="activate(0)">
+          <span class="step-num">01</span>
+          <div>
+            <div class="step-title">Ingest — we collect everything</div>
+            <div class="step-desc">Our crawlers monitor 3,000+ sources: ticketing platforms, government calendars, sports leagues, social signals, and live RSS feeds. Updated every 15 minutes.</div>
+          </div>
+        </div>
+        <div class="how-step" onclick="activate(1)">
+          <span class="step-num">02</span>
+          <div>
+            <div class="step-title">Enrich — we add business context</div>
+            <div class="step-desc">Each event is scored for predicted attendance, local impact radius, category, and correlation to demand spikes in your vertical — built on 10 years of training data.</div>
+          </div>
+        </div>
+        <div class="how-step" onclick="activate(2)">
+          <span class="step-num">03</span>
+          <div>
+            <div class="step-title">Deliver — to wherever you work</div>
+            <div class="step-desc">Push signals via API, webhook, or our native connectors. Your teams get event-aware dashboards, automated alerts, and ML-ready datasets.</div>
+          </div>
+        </div>
+        <div class="how-step" onclick="activate(3)">
+          <span class="step-num">04</span>
+          <div>
+            <div class="step-title">Optimise — and get smarter over time</div>
+            <div class="step-desc">Prism learns from your actuals. Feed back revenue, footfall, or staffing data and watch forecast accuracy improve every cycle.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="how-right">
+      <div class="pipe-nodes">
+        <div class="pipe-node pipe-node-0 pipe-active" id="pnode-0">
+          <div class="pipe-node-title">Data Ingestion Layer</div>
+          <div class="pipe-node-sub">3,000+ sources · 19M events</div>
+          <div class="pipe-dots">
+            <div class="pipe-dot" style="background:#E8520A"></div>
+            <div class="pipe-dot" style="background:#179948"></div>
+            <div class="pipe-dot" style="background:#c94308"></div>
+            <div class="pipe-dot" style="background:#A0A7B4"></div>
+          </div>
+        </div>
+        <div class="pipe-connector"><div class="pipe-line"></div><div class="pipe-arrow"></div></div>
+        <div class="pipe-node pipe-node-1" id="pnode-1">
+          <div class="pipe-node-title">AI Enrichment Engine</div>
+          <div class="pipe-node-sub">Scoring · Impact radius · Demand curves</div>
+          <div class="pipe-bars">
+            <span style="height:10px;opacity:.6"></span>
+            <span style="height:14px;opacity:.8"></span>
+            <span style="height:8px;opacity:.5"></span>
+            <span style="height:18px;opacity:.9"></span>
+            <span style="height:12px;opacity:.7"></span>
+          </div>
+        </div>
+        <div class="pipe-connector"><div class="pipe-line"></div><div class="pipe-arrow"></div></div>
+        <div class="pipe-node pipe-node-2" id="pnode-2">
+          <div class="pipe-node-title">Delivery & Integration</div>
+          <div class="pipe-node-sub">API · Webhooks · Native connectors</div>
+          <div class="pipe-pulse">
+            <div class="pipe-pulse-dot"></div>
+            <div class="pipe-pulse-dot"></div>
+            <div class="pipe-pulse-dot"></div>
+          </div>
+        </div>
+        <div class="pipe-connector"><div class="pipe-line"></div><div class="pipe-arrow"></div></div>
+        <div class="pipe-node pipe-node-3" id="pnode-3">
+          <div class="pipe-node-title">Continuous Learning</div>
+          <div class="pipe-node-sub">Actuals feedback loop</div>
+          <div class="pipe-loop">↺ improving every cycle</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function activate(i) {
+  document.querySelectorAll('.how-step').forEach((s,j) => s.classList.toggle('active', j===i));
+  document.querySelectorAll('.pipe-node').forEach((n,j) => n.classList.toggle('pipe-active', j===i));
+  // Resize iframe to fit content
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+}
+// Set initial iframe height
+window.addEventListener('load', function() {
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+});
+</script>
 """, height=520, scrolling=False)
 
 
@@ -750,6 +989,3 @@ _footer_html = """
 """
 footer_slot = st.empty()
 footer_slot.markdown(_footer_html, unsafe_allow_html=True)
-
-
-
