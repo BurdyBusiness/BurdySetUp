@@ -279,11 +279,9 @@ h3 {
     position: fixed;
     bottom: 0; left: 0; right: 0;
     z-index: 998;
-    background: rgba(244,245,247,0.92);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    padding: 12px 3rem;
-    border-top: none;
+    background: #F4F5F7;
+    padding: 14px 3rem;
+    border-top: 1px solid rgba(0,0,0,.07);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -322,6 +320,68 @@ a.footer-badge:hover {
     border-color: var(--orange);
     background: var(--orange-glow);
     color: var(--orange) !important;
+}
+
+@media (max-width: 768px) {
+    .block-container {
+        padding: 2rem 1rem 60px !important;
+    }
+
+    /* Hero — hide images, centre text full width */
+    .img-panel {
+        display: none !important;
+    }
+    .centre {
+        padding: 32px 20px !important;
+    }
+    .headline {
+        font-size: 22px !important;
+    }
+    .body-text {
+        font-size: 13px !important;
+    }
+    .stats {
+        gap: 16px !important;
+    }
+    .stat-val {
+        font-size: 16px !important;
+    }
+
+    /* Stat boxes — wrap to 2 columns */
+    .stat-row {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+    .stat-box {
+        flex: 1 1 calc(50% - 8px) !important;
+        min-width: 0 !important;
+        padding: 14px 10px !important;
+    }
+    div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+        font-size: 22px !important;
+    }
+
+    /* Control card — stack inputs */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+    }
+
+    /* Footer — fixed height, hide badges, show copyright only */
+    .burdy-footer {
+        padding: 10px 1rem !important;
+        height: 44px !important;
+        overflow: hidden !important;
+        flex-wrap: nowrap !important;
+    }
+    .footer-badges {
+        display: none !important;
+    }
+    .footer-copy {
+        font-size: 10px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -737,6 +797,7 @@ _footer_html = """
 footer_slot = st.empty()
 footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 
+
 # =====================================================
 # HELPERS
 # =====================================================
@@ -1125,5 +1186,3 @@ if not df.empty:
     st.subheader(label)
     st.caption(f"{len(df)} events found — showing preview")
     render_table(df)
-
-# Footer is rendered earlier via footer_slot to keep it visible during fetches.
