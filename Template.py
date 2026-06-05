@@ -486,8 +486,8 @@ if _current_script == _running_script:
 
     <div class="burdy-header">
       <div class="burdy-logo">
-        <img src="{{BIRD_LOGO_URL}}" style="display:block;height:clamp(40px,8vw,80px);" />
-        <img src="{{WORD_LOGO_URL}}" style="display:block;height:clamp(60px,12vw,150px);" />
+        <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
+        <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
       </div>
       <div class="ticker-wrap">
         <div class="ticker-track">
