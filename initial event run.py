@@ -62,7 +62,7 @@ html, body, [class*="css"] {
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
 
 .block-container {
-    padding: 2rem 3rem 4rem !important;
+    padding: 2rem 3rem 80px !important;
     max-width: 1400px !important;
 }
 
@@ -222,15 +222,67 @@ h3 {
     letter-spacing: -.02em !important;
     color: var(--text) !important;
 }
+.stat-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+.stat-box {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    font-family: 'DM Sans', sans-serif;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    position: relative;
+    overflow: hidden;
+}
+.stat-box::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--orange), var(--green), transparent);
+}
+.stat-num {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--orange);
+    letter-spacing: -.03em;
+    margin-bottom: 4px;
+}
+.stat-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
 .burdy-footer {
-    margin-top: 60px;
-    padding-top: 24px;
-    border-top: 1px solid var(--border);
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 998;
+    background: rgba(244,245,247,0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 12px 3rem;
+    border-top: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
+    overflow: hidden;
+}
+.burdy-footer::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--orange), var(--green), transparent);
 }
 .footer-copy {
     font-family: 'DM Mono', monospace;
@@ -238,14 +290,24 @@ h3 {
     color: var(--text-muted);
 }
 .footer-badges { display: flex; gap: 8px; flex-wrap: wrap; }
-.footer-badge {
+.footer-badge,
+a.footer-badge,
+a.footer-badge:link,
+a.footer-badge:visited {
     font-family: 'DM Mono', monospace;
     font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
     padding: 4px 10px;
     border: 1px solid var(--border);
     border-radius: 4px;
-    color: var(--text-muted);
+    color: var(--text-muted) !important;
     background: var(--surface);
+    text-decoration: none !important;
+    transition: border-color .15s, background .15s;
+}
+a.footer-badge:hover {
+    border-color: var(--orange);
+    background: var(--orange-glow);
+    color: var(--orange) !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -255,18 +317,39 @@ h3 {
 # =====================================================
 
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
+SKIDDLE_API_KEY      = st.secrets["SKIDDLE_API_KEY"]
 SUPABASE_URL         = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY         = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 BIRD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Bird%20Logo%20Left.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0JpcmQgTG9nbyBMZWZ0LnBuZyIsImlhdCI6MTc4MDU5ODM2NSwiZXhwIjoxODEyMTM0MzY1fQ.OMa5cbOtPSUZR4JTjlT3Mm1XBZlgi2rugZOQx7SLCX0"
 WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Font%20logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0ZvbnQgbG9nby5wbmciLCJpYXQiOjE3ODA1OTg0MTEsImV4cCI6MTgxMjEzNDQxMX0.pt-zS-TT80l_mp-_jGklDgtx8K2wc0uafgW36VDklbo"
 
-TM_BASE_URL  = "https://app.ticketmaster.com/discovery/v2/events.json"
-POSTCODE_API = "https://api.postcodes.io/postcodes/{}"
+TM_BASE_URL      = "https://app.ticketmaster.com/discovery/v2/events.json"
+SKIDDLE_URL      = "https://www.skiddle.com/api/v1/events/search/"
+POSTCODE_API     = "https://api.postcodes.io/postcodes/{}"
 
-WINDOW_DAYS  = 30
-MONTHS_AHEAD = 24
-MAX_PAGES    = 5
-PAGE_SIZE    = 200
+WINDOW_DAYS      = 30
+MONTHS_AHEAD     = 24
+TM_MAX_PAGES     = 5
+TM_PAGE_SIZE     = 200
+SK_MAX_PAGES     = 10
+SK_PAGE_SIZE     = 100
+
+SKIDDLE_ONLY     = {"Genres", "Artists", "Distance", "Min Age", "Tickets URL", "source"}
+
+EVENTCODE_MAP = {
+    "FEST":    "Festival",
+    "LIVE":    "Live Music",
+    "CLUB":    "Clubbing",
+    "DATE":    "Dating",
+    "THEATRE": "Theatre",
+    "COMEDY":  "Comedy",
+    "EXHIB":   "Exhibition",
+    "KIDS":    "Kids / Family",
+    "BARPUB":  "Bar / Pub",
+    "LGB":     "Gay / Lesbian",
+    "SPORT":   "Sport",
+    "ARTS":    "Arts",
+}
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -348,30 +431,67 @@ st.markdown(f"""
 # =====================================================
 
 st.markdown("""
-  <div style="
-    font-family: 'DM Sans', sans-serif;
-    font-weight: 700;
-    font-size: 28px;
-    letter-spacing: -.02em;
-    color: var(--text);
-    margin-bottom: 20px;
-    text-align: center;
-  ">Burdy Business Event Finder</div>
+  <div style="font-family:'DM Sans',sans-serif;font-weight:700;font-size:28px;
+    letter-spacing:-.02em;color:var(--text);margin-bottom:20px;text-align:center;">
+    Burdy Business Event Finder
+  </div>
 """, unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 4, 1])
 
 with col1:
     postcode = st.text_input("Enter postcode")
-
 with col2:
     radius = st.slider("Search radius (miles)", 1, 100, 10)
-
 with col3:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    find_events = st.button("Find new events", use_container_width=True)
+    find_events = st.button("Find events", use_container_width=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+# ── Stat boxes: always visible, updated progressively during fetch ──
+def _stat_row(tm, sk, new_events, nearby, total, radius_label):
+    return f"""
+<div class="stat-row">
+  <div class="stat-box">
+    <div class="stat-num">{tm}</div>
+    <div class="stat-label">Ticketmaster Events</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num">{sk}</div>
+    <div class="stat-label">Skiddle Events</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num">{new_events}</div>
+    <div class="stat-label">New Events Added</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num">{nearby}</div>
+    <div class="stat-label">Nearby within {radius_label} miles</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num">{total}</div>
+    <div class="stat-label">Total in Database</div>
+  </div>
+</div>"""
+
+stats_slot = st.empty()
+stats_slot.markdown(_stat_row("—", "—", "—", "—", "—", radius), unsafe_allow_html=True)
+
+# Reserve the footer slot immediately so it is always in the DOM,
+# even while the fetch progress bar is updating.
+_footer_html = """
+<div class="burdy-footer">
+  <div class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</div>
+  <div class="footer-badges">
+    <a class="footer-badge" href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Ticketmaster.co.uk</a>
+    <a class="footer-badge" href="https://github.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Github.com</a>
+    <a class="footer-badge" href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Supabase.com</a>
+    <a class="footer-badge" href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">PostCodes.io</a>
+    <a class="footer-badge" href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Streamlit.io</a>
+  </div>
+</div>
+"""
+footer_slot = st.empty()
+footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 
 # =====================================================
 # HELPERS
@@ -384,6 +504,49 @@ def get_location(postcode_input):
     if not geo.get("result"):
         return None, None
     return geo["result"]["latitude"], geo["result"]["longitude"]
+
+
+def upsert_batch(events_dict, strip_keys=None):
+    """Upsert a dict of events, preserving first_seen_at / Created At on existing rows."""
+    strip_keys = strip_keys or set()
+    now        = datetime.now(timezone.utc).isoformat()
+    batch = [
+        {**{k: v for k, v in e.items() if k not in strip_keys},
+         "first_seen_at": now,
+         "Created At":    now}
+        for e in events_dict.values()
+    ]
+    if not batch:
+        return 0
+
+    # Chunk ID lookup to avoid URL length limits
+    all_ids      = [r["ID"] for r in batch]
+    existing_ids = set()
+    for i in range(0, len(all_ids), 100):
+        chunk = all_ids[i:i + 100]
+        rows  = (
+            supabase.table("BurdySteupTest")
+            .select("ID")
+            .in_("ID", chunk)
+            .execute()
+            .data or []
+        )
+        existing_ids.update(row["ID"] for row in rows)
+
+    new_rows    = [r for r in batch if r["ID"] not in existing_ids]
+    update_rows = [
+        # Only send fields that are non-null so we never overwrite existing data with NULL
+        {k: v for k, v in r.items()
+         if k not in {"first_seen_at", "Created At"} and v is not None}
+        for r in batch if r["ID"] in existing_ids
+    ]
+
+    if new_rows:
+        supabase.table("BurdySteupTest").insert(new_rows).execute()
+    if update_rows:
+        supabase.table("BurdySteupTest").upsert(update_rows, on_conflict="ID").execute()
+
+    return len(batch)
 
 
 def render_rows(data_df):
@@ -406,171 +569,100 @@ def render_rows(data_df):
 
 
 def render_table(df):
-    """Render the 3-visible + blurred overlay table via components.html."""
-    visible_df = df.head(3)
-    blurred_df = df.iloc[3:13]
-
-    visible_html = render_rows(visible_df)
-    blurred_html = render_rows(blurred_df) if len(df) > 3 else ""
-
+    visible_df    = df.head(3)
+    blurred_df    = df.iloc[3:13]
+    visible_html  = render_rows(visible_df)
+    blurred_html  = render_rows(blurred_df) if len(df) > 3 else ""
     visible_height = 44 + (len(visible_df) * 44)
     blurred_height = 44 + (len(blurred_df) * 44) if len(df) > 3 else 0
     total_height   = visible_height + min(blurred_height, 320) + 100
 
     blur_block = f"""
   <div class="blur-section">
-    <div class="blur-inner">
-      <table>{blurred_html}</table>
-    </div>
+    <div class="blur-inner"><table>{blurred_html}</table></div>
     <div class="overlay">
       <div class="card">
         <div class="card-top"></div>
         <div class="lock">🔒</div>
         <div class="title">Unlock Full Results</div>
-        <div class="body">
-          You're viewing a preview of 3 results.<br>
-          Contact Burdy Business to activate your subscription
-          and unlock all events in your area.
+        <div class="body">You're viewing a preview of 3 results.<br>
+          Log in or contact Burdy Business to unlock all events in your area.</div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:4px;">
+          <a class="btn-primary" href="/login">Log In</a>
+          <a class="btn-secondary" href="mailto:hello@burdy.com">Contact Us</a>
         </div>
-        <a class="btn" href="mailto:hello@burdy.com">Get in Touch</a>
       </div>
     </div>
-  </div>
-""" if len(df) > 3 else ""
+  </div>""" if len(df) > 3 else ""
 
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
+    html = f"""<!DOCTYPE html><html><head>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: #F4F5F7; font-family: 'DM Sans', sans-serif; }}
-  table {{ width: 100%; border-collapse: collapse; background: #fff; }}
-  .visible-wrap {{
-    border-radius: {('14px 14px 0 0' if len(df) > 3 else '14px')};
-    overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0,0,0,.05);
-  }}
-  .blur-section {{
-    position: relative;
-    border-radius: 0 0 14px 14px;
-    overflow: hidden;
-  }}
-  .blur-inner {{
-    filter: blur(5px);
-    pointer-events: none;
-    user-select: none;
-    opacity: 0.6;
-  }}
-  .overlay {{
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(to bottom,
-      rgba(244,245,247,0) 0%,
-      rgba(244,245,247,0.85) 30%,
-      rgba(244,245,247,0.85) 100%);
-    z-index: 10;
-  }}
-  .card {{
-    background: #fff;
-    border: 1px solid rgba(0,0,0,.09);
-    border-radius: 16px;
-    padding: 28px 32px;
-    max-width: 400px;
-    width: 90%;
-    text-align: center;
-    box-shadow: 0 8px 32px rgba(0,0,0,.1);
-    position: relative;
-    overflow: hidden;
-  }}
-  .card-top {{
-    position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, #E8520A, #179948, transparent);
-  }}
-  .lock  {{ font-size: 32px; margin-bottom: 12px; }}
-  .title {{
-    font-family: 'Syne', sans-serif;
-    font-weight: 800; font-size: 20px;
-    letter-spacing: -.02em; color: #141518;
-    margin-bottom: 10px;
-  }}
-  .body  {{ font-size: 13px; color: #6B7280; line-height: 1.6; margin-bottom: 20px; }}
-  .btn {{
-    display: inline-block; background: #E8520A; color: #fff;
-    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 11px;
-    letter-spacing: .06em; text-transform: uppercase;
-    padding: 10px 24px; border-radius: 8px; text-decoration: none;
-    box-shadow: 0 3px 14px rgba(232,82,10,.25);
-  }}
-</style>
-</head>
-<body>
-  <div class="visible-wrap">
-    <table>{visible_html}</table>
-  </div>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
+table {{ width:100%; border-collapse:collapse; background:#fff; }}
+.visible-wrap {{ border-radius:{'14px 14px 0 0' if len(df) > 3 else '14px'}; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
+.blur-section {{ position:relative; border-radius:0 0 14px 14px; overflow:hidden; }}
+.blur-inner {{ filter:blur(5px); pointer-events:none; user-select:none; opacity:0.6; }}
+.overlay {{ position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(to bottom,rgba(244,245,247,0) 0%,rgba(244,245,247,0.85) 30%,rgba(244,245,247,0.85) 100%); z-index:10; }}
+.card {{ background:#fff; border:1px solid rgba(0,0,0,.09); border-radius:16px; padding:28px 32px; max-width:400px; width:90%; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.1); position:relative; overflow:hidden; }}
+.card-top {{ position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#E8520A,#179948,transparent); }}
+.lock {{ font-size:32px; margin-bottom:12px; }}
+.title {{ font-family:'Syne',sans-serif; font-weight:800; font-size:20px; letter-spacing:-.02em; color:#141518; margin-bottom:10px; }}
+.body {{ font-size:13px; color:#6B7280; line-height:1.6; margin-bottom:20px; }}
+.btn-primary {{ display:inline-block; background:#E8520A; color:#fff; font-family:'DM Sans',sans-serif; font-weight:600; font-size:12px; padding:10px 24px; border-radius:8px; text-decoration:none; box-shadow:0 3px 14px rgba(232,82,10,.25); }}
+.btn-secondary {{ display:inline-block; background:transparent; color:#E8520A; font-family:'DM Sans',sans-serif; font-weight:600; font-size:12px; padding:10px 24px; border-radius:8px; text-decoration:none; border:1px solid #E8520A; }}
+</style></head><body>
+  <div class="visible-wrap"><table>{visible_html}</table></div>
   {blur_block}
-</body>
-</html>"""
+</body></html>"""
 
     components.html(html, height=total_height, scrolling=False)
 
+
 # =====================================================
-# FIND NEW EVENTS
+# FETCH FUNCTIONS
 # =====================================================
 
-if find_events:
-    if not postcode:
-        st.warning("Enter a postcode")
-        st.stop()
-
-    lat, lon = get_location(postcode)
-    if lat is None:
-        st.error("Invalid postcode")
-        st.stop()
-
-    start_date    = datetime.now(timezone.utc)
-    end_limit     = start_date + timedelta(days=30 * MONTHS_AHEAD)
+def fetch_ticketmaster(lat, lon, radius, status, progress):
+    """Fetch all TM events for lat/lon/radius and return event dict."""
+    start_dt      = datetime.now(timezone.utc)
+    end_limit     = start_dt + timedelta(days=30 * MONTHS_AHEAD)
     events        = {}
-    progress      = st.progress(0)
-    status        = st.empty()
     window        = 0
-    total_windows = max(1, (end_limit - start_date).days // WINDOW_DAYS)
+    total_windows = max(1, (end_limit - start_dt).days // WINDOW_DAYS)
 
-    while start_date < end_limit:
-        end_date = start_date + timedelta(days=WINDOW_DAYS)
-        window  += 1
-        status.text(f"Scanning window {window}/{total_windows}")
+    while start_dt < end_limit:
+        end_dt  = start_dt + timedelta(days=WINDOW_DAYS)
+        window += 1
+        status.text(f"Searching Ticketmaster "
+                    f"({start_dt.strftime('%b %Y')})")
 
         page        = 0
         total_pages = 1
 
-        while page < total_pages and page < MAX_PAGES:
+        while page < total_pages and page < TM_MAX_PAGES:
             params = {
                 "apikey":        TICKETMASTER_API_KEY,
                 "latlong":       f"{lat},{lon}",
                 "radius":        radius,
                 "unit":          "miles",
                 "countryCode":   "GB",
-                "size":          PAGE_SIZE,
+                "size":          TM_PAGE_SIZE,
                 "page":          page,
-                "startDateTime": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "endDateTime":   end_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "startDateTime": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "endDateTime":   end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
-
             res = requests.get(TM_BASE_URL, params=params, timeout=15)
-
             if res.status_code == 429:
                 time.sleep(2)
                 continue
             if res.status_code != 200:
-                st.error(f"API error {res.status_code}")
-                st.stop()
+                raise RuntimeError(f"Ticketmaster API error {res.status_code}")
 
-            data = res.json()
-            total_pages = min(data.get("page", {}).get("totalPages", 1), MAX_PAGES)
+            data        = res.json()
+            total_pages = min(data.get("page", {}).get("totalPages", 1), TM_MAX_PAGES)
 
             for e in data.get("_embedded", {}).get("events", []):
                 venues = e.get("_embedded", {}).get("venues", [])
@@ -602,81 +694,168 @@ if find_events:
             page += 1
             time.sleep(0.2)
 
-        progress.progress(min(window / total_windows, 1.0))
-        start_date = end_date
+        progress.progress(min(window / (total_windows * 2), 0.5))
+        start_dt = end_dt
 
-    # Before counts
-    before_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
-    before_radius_count = len(
-        supabase.rpc("search_within_radius",
+    return events
+
+
+def fetch_skiddle(lat, lon, radius, status, progress):
+    """Fetch all Skiddle events for lat/lon/radius and return event dict."""
+    start_dt      = datetime.now(timezone.utc)
+    end_limit     = start_dt + timedelta(days=30 * MONTHS_AHEAD)
+    events        = {}
+    window        = 0
+    total_windows = max(1, (end_limit - start_dt).days // WINDOW_DAYS)
+
+    while start_dt < end_limit:
+        end_dt  = start_dt + timedelta(days=WINDOW_DAYS)
+        window += 1
+        status.text(f"Searching Skiddle "
+                    f"({start_dt.strftime('%b %Y')})")
+        offset = 0
+
+        for _ in range(SK_MAX_PAGES):
+            params = {
+                "api_key":     SKIDDLE_API_KEY,
+                "latitude":    lat,
+                "longitude":   lon,
+                "radius":      radius,
+                "minDate":     start_dt.strftime("%Y-%m-%d"),
+                "maxDate":     end_dt.strftime("%Y-%m-%d"),
+                "limit":       SK_PAGE_SIZE,
+                "offset":      offset,
+                "description": 1,
+                "getdistance": 1,
+                "order":       "date",
+            }
+            res = requests.get(SKIDDLE_URL, params=params, timeout=15)
+            if res.status_code == 429:
+                time.sleep(2)
+                continue
+            if res.status_code != 200:
+                raise RuntimeError(f"Skiddle API error {res.status_code}: {res.text}")
+
+            data    = res.json()
+            results = data.get("results", [])
+
+            for e in results:
+                venue       = e.get("venue") or {}
+                event_id    = str(e.get("id", "")).strip()
+                artists     = e.get("artists") or []
+                artist_names = ", ".join(
+                    a.get("artistname", "") for a in artists if a.get("artistname")
+                )
+                raw = (
+                    str(e.get("eventname")) +
+                    str(e.get("date")) +
+                    str(venue.get("name")) +
+                    str(venue.get("town"))
+                )
+                events[event_id] = {
+                    "ID":          event_id,
+                    "Name":        e.get("eventname"),
+                    "Date":        e.get("date"),
+                    "Time":        e.get("openingtimes", {}).get("doorsopen"),
+                    "Venue Name":  venue.get("name"),
+                    "Type":        EVENTCODE_MAP.get(e.get("EventCode"), e.get("EventCode")),
+                    "City":        venue.get("town"),
+                    "PostalCode":  venue.get("postcode"),
+                    "Latitude":    venue.get("latitude"),
+                    "Longitude":   venue.get("longitude"),
+                    "url":         e.get("link"),
+                    "Genres":      ", ".join(g.get("name", "") for g in e.get("genres") or [] if g.get("name")) or None,
+                    "Artists":     artist_names or None,
+                    "Distance":    e.get("distance"),
+                    "Min Age":     e.get("minage"),
+                    "Tickets URL": e.get("tickets") or e.get("link"),
+                    "source":      "skiddle",
+                    "event_hash":  hashlib.md5(raw.encode()).hexdigest(),
+                    "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+            if len(results) < SK_PAGE_SIZE:
+                break
+            offset += SK_PAGE_SIZE
+            time.sleep(0.2)
+
+        progress.progress(0.5 + min(window / (total_windows * 2), 0.5))
+        start_dt = end_dt
+
+    return events
+
+
+# =====================================================
+# FIND & SYNC ALL EVENTS
+# =====================================================
+
+if find_events:
+    _abort = False
+
+    if not postcode:
+        st.warning("Enter a postcode")
+        _abort = True
+
+    if not _abort:
+        lat, lon = get_location(postcode)
+        if lat is None:
+            st.error("Invalid postcode")
+            _abort = True
+
+    if not _abort:
+        progress = st.progress(0)
+        status   = st.empty()
+
+        before_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
+
+        # ── TICKETMASTER ──
+        try:
+            tm_events = fetch_ticketmaster(lat, lon, radius, status, progress)
+            tm_count  = upsert_batch(tm_events)
+            status.text(f"✓ Ticketmaster: {tm_count} events processed")
+        except RuntimeError as e:
+            st.error(str(e))
+            tm_count = 0
+
+        # Update stat boxes with Ticketmaster count as soon as it's known
+        stats_slot.markdown(_stat_row(tm_count, "—", "—", "—", "—", radius), unsafe_allow_html=True)
+
+        # ── SKIDDLE ──
+        try:
+            sk_events = fetch_skiddle(lat, lon, radius, status, progress)
+            sk_count  = upsert_batch(sk_events, strip_keys=SKIDDLE_ONLY)
+            status.text(f"✓ Skiddle: {sk_count} events processed")
+        except RuntimeError as e:
+            st.error(str(e))
+            sk_count = 0
+
+        progress.progress(1.0)
+
+        # ── AFTER COUNTS ──
+        after_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
+        after_radius_count = supabase.rpc(
+            "count_within_radius",
             {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
-        ).execute().data or []
-    )
+        ).execute().data
+        after_radius_resp = supabase.rpc(
+            "search_within_radius",
+            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
+        ).execute()
 
-    # Upsert
-    batch = list(events.values())
-    if batch:
-        supabase.table("BurdySteupTest").upsert(batch, on_conflict="ID").execute()
+        st.session_state["search_df"]    = pd.DataFrame(after_radius_resp.data or [])
+        st.session_state["search_label"] = (
+            f"{after_radius_count} events within {radius} miles of {postcode.upper()}"
+        )
 
-    # After counts
-    after_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
-    after_radius_resp = supabase.rpc(
-        "search_within_radius",
-        {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
-    ).execute()
-    after_radius_count = len(after_radius_resp.data or [])
+        status.empty()
+        progress.empty()
 
-    # ── SAVE TO SESSION STATE ──
-    st.session_state["search_df"]    = pd.DataFrame(after_radius_resp.data or [])
-    st.session_state["search_label"] = f"{after_radius_count} events within {radius} miles of {postcode.upper()}"
+        # Final update with all real values
+        stats_slot.markdown(
+            _stat_row(tm_count, sk_count, after_total - before_total, after_radius_count, after_total, radius),
+            unsafe_allow_html=True
+        )
 
-    status.empty()
-    status.empty()
-    progress.empty()
-
-    st.markdown(f"""
-    <style>
-    .stat-row {{
-        display: flex;
-        gap: 12px;
-        margin-bottom: 8px;
-    }}
-    .stat-box {{
-        flex: 1;
-        background: transparent;
-        border: 1px solid rgba(0,0,0,.09);
-        border-radius: 10px;
-        padding: 16px 20px;
-        text-align: center;
-        font-family: 'DM Sans', sans-serif;
-    }}
-    .stat-num {{
-        font-size: 28px;
-        font-weight: 700;
-        color: #141518;
-        margin-bottom: 4px;
-    }}
-    .stat-label {{
-        font-size: 12px;
-        color: #6B7280;
-        font-weight: 400;
-    }}
-    </style>
-    <div class="stat-row">
-      <div class="stat-box">
-        <div class="stat-num">{after_total - before_total}</div>
-        <div class="stat-label">New Events Added</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-num">{after_radius_count}</div>
-        <div class="stat-label">Nearby Events within {radius} miles</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-num">{after_total}</div>
-        <div class="stat-label">Total Events in Database</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
 # =====================================================
 # SEARCH VIEW
 # =====================================================
@@ -689,7 +868,10 @@ if postcode and not find_events:
             {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
         ).execute()
         st.session_state["search_df"]    = pd.DataFrame(resp.data or [])
-        st.session_state["search_label"] = f"{len(st.session_state['search_df'])} events within {radius} miles of {postcode.upper()}"
+        st.session_state["search_label"] = (
+            f"{len(st.session_state['search_df'])} events within "
+            f"{radius} miles of {postcode.upper()}"
+        )
 
 df    = st.session_state.get("search_df", pd.DataFrame())
 label = st.session_state.get("search_label", "")
@@ -700,18 +882,4 @@ if not df.empty:
     st.caption(f"{len(df)} events found — showing preview")
     render_table(df)
 
-# =====================================================
-# FOOTER
-# =====================================================
-
-st.markdown("""
-<div class="burdy-footer">
-  <div class="footer-copy">© 2026 Burdy Business · Powered by Ticketmaster Discovery API</div>
-  <div class="footer-badges">
-    <span class="footer-badge">TM Discovery v2</span>
-    <span class="footer-badge">Supabase</span>
-    <span class="footer-badge">PostCodes.io</span>
-    <span class="footer-badge">Streamlit</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+# Footer is rendered earlier via footer_slot to keep it visible during fetches.
