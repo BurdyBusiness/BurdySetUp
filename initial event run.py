@@ -65,6 +65,11 @@ html, body, [class*="css"] {
     padding: 2rem 3rem 80px !important;
     max-width: 1400px !important;
 }
+@media (max-width: 768px) {
+    .block-container {
+        padding: 1rem 1rem 80px !important;
+    }
+}
 
 .burdy-logo {
     display: flex; align-items: center; gap: 12px;
@@ -224,11 +229,13 @@ h3 {
 }
 .stat-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 24px;
 }
 .stat-box {
-    flex: 1;
+    flex: 1 1 calc(33% - 12px);
+    min-width: 120px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -238,6 +245,13 @@ h3 {
     box-shadow: 0 2px 8px rgba(0,0,0,.05);
     position: relative;
     overflow: hidden;
+}
+@media (max-width: 768px) {
+    .stat-box {
+        flex: 1 1 calc(50% - 12px);
+        padding: 14px 10px;
+    }
+    .stat-num { font-size: 24px !important; }
 }
 .stat-box::after {
     content: '';
@@ -274,8 +288,22 @@ h3 {
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 8px;
     overflow: hidden;
+}
+@media (max-width: 768px) {
+    .burdy-footer {
+        padding: 10px 1rem;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .footer-badges {
+        gap: 4px;
+    }
+    .footer-copy {
+        font-size: 9px;
+    }
 }
 .burdy-footer::before {
     content: '';
@@ -398,12 +426,21 @@ st.markdown(f"""
     0%   {{ transform: translateX(0); }}
     100% {{ transform: translateX(-50%); }}
 }}
+@media (max-width: 768px) {{
+    .burdy-header {{
+        padding: 0 1rem;
+        height: 60px;
+    }}
+    .ticker-wrap {{ display: none; }}
+    .live-badge {{ display: none; }}
+    .block-container {{ padding-top: 70px !important; }}
+}}
 </style>
 
 <div class="burdy-header">
   <div class="burdy-logo">
-    <img src="{BIRD_LOGO_URL}" height="80" style="display:block;" />
-    <img src="{WORD_LOGO_URL}" height="150" style="display:block;" />
+    <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
+    <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
   </div>
   <div class="ticker-wrap">
     <div class="ticker-track">
@@ -435,6 +472,15 @@ st.markdown("""
     letter-spacing:-.02em;color:var(--text);margin-bottom:20px;text-align:center;">
     Burdy Business Event Finder
   </div>
+""", unsafe_allow_html=True)
+
+# Responsive layout: 3 columns on desktop, stacked on mobile via CSS
+st.markdown("""
+<style>
+@media (max-width: 768px) {
+    div[data-testid="column"] { width: 100% !important; flex: 100% !important; min-width: 100% !important; }
+}
+</style>
 """, unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 4, 1])
