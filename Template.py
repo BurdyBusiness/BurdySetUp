@@ -258,32 +258,39 @@ h3 {
     text-transform: uppercase;
 }
 
-.burdy-footer {
-    background: #F4F5F7;
-    padding: 14px 3rem;
-    border-top: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    overflow: hidden;
+.burdy-footer-wrap {
     position: relative;
-    margin-top: 40px;
+    margin-top: 48px;
+    margin-left: -3rem;
+    margin-right: -3rem;
+    margin-bottom: -80px;
+    background: rgba(244,245,247,0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    overflow: hidden;
 }
-.burdy-footer::before {
+.burdy-footer-wrap::before {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 3px;
     background: linear-gradient(90deg, var(--orange), var(--green), transparent);
 }
+.burdy-footer {
+    padding: 14px 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 12px;
+}
 .footer-copy {
     font-family: 'DM Mono', monospace;
     font-size: 11px;
     color: var(--text-muted);
+    white-space: nowrap;
 }
-.footer-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.footer-badges { display: flex; gap: 8px; flex-wrap: nowrap; }
 .footer-badge,
 a.footer-badge,
 a.footer-badge:link,
@@ -304,21 +311,11 @@ a.footer-badge:hover {
     color: var(--orange) !important;
 }
 @media (max-width: 768px) {
-    .burdy-footer {
-        padding: 10px 1rem;
-        height: 44px;
-        overflow: hidden;
-        flex-wrap: nowrap;
-    }
+    .burdy-footer-wrap { margin-left: -1rem; margin-right: -1rem; }
+    .burdy-footer { padding: 10px 1rem; }
     .footer-badges { display: none; }
-    .footer-copy {
-        font-size: 10px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+    .footer-copy { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 }
-
 
 @media (max-width: 768px) {
     .block-container {
@@ -509,6 +506,7 @@ if _current_script == _running_script:
       </div>
     </div>
     """, unsafe_allow_html=True)
+
 
 
     # =====================================================
@@ -728,7 +726,7 @@ if _current_script == _running_script:
           </div>
         </div>
         <div style="display:flex;justify-content:center;gap:12px;margin:28px 0 0;flex-wrap:wrap;">
-          <a href="#" style="
+          <button onclick="window.open('https://www.youtube.com', '_blank')" style="
             display:inline-flex;align-items:center;gap:8px;
             font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
             letter-spacing:.06em;text-transform:uppercase;text-decoration:none;
@@ -736,7 +734,7 @@ if _current_script == _running_script:
             background:#ffffff;color:#E8520A;
             border:1px solid rgba(232,82,10,.35);
             box-shadow:0 2px 8px rgba(232,82,10,.1);
-            transition:all .2s;"
+            transition:all .2s;cursor:pointer;"
             onmouseover="this.style.background='rgba(232,82,10,.06)';this.style.borderColor='#E8520A'"
             onmouseout="this.style.background='#ffffff';this.style.borderColor='rgba(232,82,10,.35)'">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0">
@@ -744,8 +742,8 @@ if _current_script == _running_script:
               <polygon points="5.5,4.5 10,7 5.5,9.5" fill="#E8520A"/>
             </svg>
             Watch 3 min demo
-          </a>
-          <a href="/initial_event_run" target="_parent" style="
+          </button>
+          <button onclick="window.open('https://burdysetup-initial.streamlit.app', '_blank')" style="
             display:inline-flex;align-items:center;gap:8px;
             font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
             letter-spacing:.06em;text-transform:uppercase;text-decoration:none;
@@ -810,7 +808,7 @@ if _current_script == _running_script:
         color: var(--text-muted); margin-bottom: 10px;
     }
     .how-title {
-        font-family: 'Syne', sans-serif;
+        font-family: 'DM Sans', sans-serif;
         font-weight: 800; font-size: 26px; letter-spacing: -.03em;
         color: var(--text); line-height: 1.2; margin-bottom: 28px;
     }
@@ -983,17 +981,49 @@ if _current_script == _running_script:
     """, height=520, scrolling=False)
 
 
-    _footer_html = """
-    <div class="burdy-footer">
-      <div class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</div>
-      <div class="footer-badges">
-        <a class="footer-badge" href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Ticketmaster.co.uk</a>
-        <a class="footer-badge" href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Skiddle.com</a>
-        <a class="footer-badge" href="https://github.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Github.com</a>
-        <a class="footer-badge" href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Supabase.com</a>
-        <a class="footer-badge" href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">PostCodes.io</a>
-        <a class="footer-badge" href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Streamlit.io</a>
-        <a class="footer-badge" href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Mapbox.com</a>
+    # ── Footer slot: rendered early so it's always in the DOM ──
+    _badge_style = (
+        "font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;"
+        "text-transform:uppercase;padding:4px 10px;"
+        "border:1px solid rgba(0,0,0,.09);border-radius:4px;"
+        "color:#A0A7B4;background:#FFFFFF;text-decoration:none;"
+        "display:inline-block;"
+    )
+    _footer_html = f"""
+    <div style="
+        position:relative;
+        background:rgba(244,245,247,0.92);
+        width:100vw;
+        margin-left:calc(-50vw + 50%);
+        margin-top:48px;
+        backdrop-filter:blur(8px);
+        -webkit-backdrop-filter:blur(8px);
+        overflow:hidden;
+    ">
+      <div style="
+          position:absolute;top:0;left:0;right:0;height:3px;
+          background:linear-gradient(90deg,#E8520A,#179948,transparent);
+      "></div>
+      <div style="
+          padding:14px 3rem;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          flex-wrap:nowrap;
+          gap:12px;
+      ">
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#A0A7B4;white-space:nowrap;">
+          © 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:nowrap;">
+          <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Ticketmaster.co.uk</a>
+          <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Skiddle.com</a>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Github.com</a>
+          <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Supabase.com</a>
+          <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">PostCodes.io</a>
+          <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Streamlit.io</a>
+          <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Mapbox.com</a>
+        </div>
       </div>
     </div>
     """

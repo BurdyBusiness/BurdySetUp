@@ -394,6 +394,8 @@ TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 SKIDDLE_API_KEY      = st.secrets["SKIDDLE_API_KEY"]
 SUPABASE_URL         = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY         = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+BIRD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Bird%20Logo%20Left.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0JpcmQgTG9nbyBMZWZ0LnBuZyIsImlhdCI6MTc4MDU5ODM2NSwiZXhwIjoxODEyMTM0MzY1fQ.OMa5cbOtPSUZR4JTjlT3Mm1XBZlgi2rugZOQx7SLCX0"
+WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Font%20logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0ZvbnQgbG9nby5wbmciLCJpYXQiOjE3ODA2ODA3OTYsImV4cCI6MjA5NjA0MDc5Nn0.yI5FtOyAlXnLpf1Nbu4SFFUmVt9i4eSKQ17UTwRjHdE"
 
 TM_BASE_URL      = "https://app.ticketmaster.com/discovery/v2/events.json"
 SKIDDLE_URL      = "https://www.skiddle.com/api/v1/events/search/"
@@ -425,8 +427,142 @@ EVENTCODE_MAP = {
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# =====================================================
+# HEADER
+# =====================================================
 
+st.markdown(f"""
+<style>
+.burdy-header {{
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 999;
+    background: rgba(244,245,247,0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 0 3rem;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}}
+.burdy-header::after {{
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--orange), var(--green), transparent);
+}}
+.block-container {{ padding-top: 100px !important; }}
+.burdy-logo {{ display: flex; align-items: center; gap: 12px; }}
+.live-badge {{
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    flex-shrink: 0;
+}}
+.live-dot {{
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    display: inline-block;
+}}
+.ticker-wrap {{ overflow: hidden; flex: 1; margin: 0 40px; }}
+.ticker-track {{
+    display: flex;
+    white-space: nowrap;
+    animation: ticker 18s linear infinite;
+}}
+.ticker-track:hover {{ animation-play-state: paused; }}
+.ticker-item {{
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+    letter-spacing: .08em; text-transform: uppercase;
+    padding-right: 48px;
+}}
+.ticker-sep {{ color: var(--orange); padding-right: 48px; font-size: 11px; font-family: 'DM Mono', monospace; }}
+@keyframes ticker {{
+    0%   {{ transform: translateX(0); }}
+    100% {{ transform: translateX(-50%); }}
+}}
+</style>
+<div class="burdy-header">
+  <div class="burdy-logo">
+    <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
+    <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
+  </div>
+  <div class="ticker-wrap">
+    <div class="ticker-track">
+      <span class="ticker-item">Ticketmaster Discovery v2</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Supabase Live Sync</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">PostCodes.io Geolocation</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">24 Months Event Coverage</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">UK Events Only</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Ticketmaster Discovery v2</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">Supabase Live Sync</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">PostCodes.io Geolocation</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">24 Months Event Coverage</span><span class="ticker-sep">◆</span>
+      <span class="ticker-item">UK Events Only</span><span class="ticker-sep">◆</span>
+    </div>
+  </div>
+  <div class="live-badge">
+    <span class="live-dot"></span>
+    Live
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
+# ── Footer slot: rendered early so it's always in the DOM ──
+_badge_style = (
+    "font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;"
+    "text-transform:uppercase;padding:4px 10px;"
+    "border:1px solid rgba(0,0,0,.09);border-radius:4px;"
+    "color:#A0A7B4;background:#FFFFFF;text-decoration:none;"
+    "display:inline-block;"
+)
+_footer_html = f"""
+<div style="
+    position:fixed;
+    bottom:0;left:0;right:0;
+    z-index:998;
+    background:rgba(244,245,247,0.92);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    overflow:hidden;
+">
+  <div style="
+      position:absolute;top:0;left:0;right:0;height:3px;
+      background:linear-gradient(90deg,#E8520A,#179948,transparent);
+  "></div>
+  <div style="
+      padding:14px 3rem;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:nowrap;
+      gap:12px;
+  ">
+    <div style="font-family:'DM Mono',monospace;font-size:11px;color:#A0A7B4;white-space:nowrap;">
+      © 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:nowrap;">
+      <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Ticketmaster.co.uk</a>
+      <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Skiddle.com</a>
+      <a href="https://github.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Github.com</a>
+      <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Supabase.com</a>
+      <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">PostCodes.io</a>
+      <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Streamlit.io</a>
+      <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Mapbox.com</a>
+    </div>
+  </div>
+</div>
+"""
+footer_slot = st.empty()
+footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 
 # =====================================================
 # CONTROL CARD
