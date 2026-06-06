@@ -22,7 +22,7 @@ st.set_page_config(
     page_title="Burdy · Event Intelligence",
     page_icon=icon,
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="collapsed",
 )
 
 # =====================================================
@@ -31,7 +31,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 :root {
     --orange:      #E8520A;
@@ -125,8 +125,11 @@ div[data-testid="stSlider"] div[class*="thumbValue"] { color: var(--green) !impo
 div[data-testid="stSlider"] label,
 div[data-testid="stSlider"] label p,
 div[data-testid="stSlider"] label span { color: var(--text-dim) !important; }
-.stButton > button {
-    font-family: 'Syne', sans-serif !important;
+/* Orange buttons — main content only, never in sidebar */
+.main .stButton > button,
+section.main .stButton > button,
+[data-testid="stMainBlockContainer"] .stButton > button {
+    font-family: 'DM Sans', sans-serif !important;
     font-weight: 700 !important;
     font-size: 12px !important;
     letter-spacing: .06em !important;
@@ -140,10 +143,24 @@ div[data-testid="stSlider"] label span { color: var(--text-dim) !important; }
     border: none !important;
     box-shadow: 0 3px 14px var(--orange-glow) !important;
 }
-.stButton > button:hover {
+.main .stButton > button:hover,
+section.main .stButton > button:hover,
+[data-testid="stMainBlockContainer"] .stButton > button:hover {
     background: var(--orange-dim) !important;
     box-shadow: 0 5px 20px rgba(232,82,10,.3) !important;
     transform: translateY(-1px) !important;
+}
+
+/* Sidebar — hide nav buttons but restore collapse/expand toggle */
+[data-testid="stSidebar"] .stButton,
+[data-testid="stSidebar"] .stButton > button {
+    display: none !important;
+}
+
+/* Hide Streamlit native toggle — we use our own injected button */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"] {
+    display: none !important;
 }
 div[data-testid="metric-container"] {
     background: var(--surface) !important;
@@ -167,7 +184,7 @@ div[data-testid="metric-container"] label {
     text-transform: uppercase !important;
 }
 div[data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-family: 'Syne', sans-serif !important;
+    font-family: 'DM Sans', sans-serif !important;
     font-weight: 800 !important;
     font-size: 32px !important;
     color: var(--orange) !important;
@@ -213,7 +230,7 @@ hr {
     margin: 28px 0 !important;
 }
 h3 {
-    font-family: 'Syne', sans-serif !important;
+    font-family: 'DM Sans', sans-serif !important;
     font-weight: 700 !important;
     font-size: 18px !important;
     letter-spacing: -.02em !important;
@@ -316,6 +333,111 @@ a.footer-badge:hover {
     .footer-badges { display: none; }
     .footer-copy { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
+
+/* Sidebar panel background & border */
+[data-testid="stSidebar"] {
+    background: var(--bg) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 2px 0 16px rgba(0,0,0,.06) !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: var(--bg) !important;
+    padding-top: 1rem !important;
+}
+
+/* Orange/green accent bar along the top of the sidebar */
+[data-testid="stSidebar"]::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--orange), var(--green), transparent);
+    z-index: 10;
+}
+
+/* Page nav links (stSidebarNavLink) */
+[data-testid="stSidebarNavLink"] {
+    border-radius: 8px !important;
+    margin: 0 6px !important;
+    padding: 0 10px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: -.01em !important;
+    color: var(--text-dim) !important;
+    transition: background .15s, color .15s !important;
+    border: 1px solid transparent !important;
+}
+[data-testid="stSidebarNavLink"]:hover {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.2) !important;
+}
+[data-testid="stSidebarNavLink"][aria-current="page"],
+[data-testid="stSidebarNavLink"].active {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.25) !important;
+    font-weight: 600 !important;
+}
+
+/* Nav icons */
+[data-testid="stSidebarNavLink"] svg {
+    color: inherit !important;
+}
+
+/* Section headers / any markdown headings inside sidebar */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+    color: var(--text-muted) !important;
+    margin: 20px 0 8px !important;
+}
+
+/* Body text / captions in sidebar */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 13px !important;
+    color: var(--text-dim) !important;
+}
+
+/* Inputs inside sidebar */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] [data-baseweb="select"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+[data-testid="stSidebar"] input:focus {
+    border-color: var(--orange) !important;
+    box-shadow: 0 0 0 3px var(--orange-glow) !important;
+}
+
+/* Buttons inside sidebar */
+/* Dividers inside sidebar */
+[data-testid="stSidebar"] hr {
+    border-top: 1px solid var(--border) !important;
+    margin: 16px 0 !important;
+}
+
+/* Scrollbar inside sidebar */
+[data-testid="stSidebar"] ::-webkit-scrollbar { width: 4px; }
+[data-testid="stSidebar"] ::-webkit-scrollbar-track { background: var(--bg); }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
 
 @media (max-width: 768px) {
     .block-container {
@@ -421,91 +543,235 @@ if _current_script == _running_script:
     # HEADER
     # =====================================================
 
-    st.markdown(f"""
-    <style>
-    .burdy-header {{
-        position: fixed;
-        top: 0; left: 0; right: 0;
-        z-index: 999;
-        background: rgba(244,245,247,0.92);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        padding: 0 3rem;
-        height: 80px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }}
-    .burdy-header::after {{
-        content: '';
-        position: absolute;
-        bottom: 0; left: 0; right: 0;
-        height: 3px;
-        background: linear-gradient(90deg, var(--orange), var(--green), transparent);
-    }}
-    .block-container {{ padding-top: 100px !important; }}
-    .burdy-logo {{ display: flex; align-items: center; gap: 12px; }}
-    .live-badge {{
-        display: flex; align-items: center; gap: 8px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 999px; padding: 7px 16px;
-        font-family: 'DM Mono', monospace;
-        font-size: 11px; color: var(--text-dim);
-        box-shadow: 0 1px 4px rgba(0,0,0,.06);
-        flex-shrink: 0;
-    }}
-    .live-dot {{
-        width: 7px; height: 7px; border-radius: 50%;
-        background: var(--green);
-        box-shadow: 0 0 6px var(--green);
-        display: inline-block;
-    }}
-    .ticker-wrap {{ overflow: hidden; flex: 1; margin: 0 40px; }}
-    .ticker-track {{
-        display: flex;
-        white-space: nowrap;
-        animation: ticker 18s linear infinite;
-    }}
-    .ticker-track:hover {{ animation-play-state: paused; }}
-    .ticker-item {{
-        font-family: 'DM Mono', monospace;
-        font-size: 11px; color: var(--text-dim);
-        letter-spacing: .08em; text-transform: uppercase;
-        padding-right: 48px;
-    }}
-    .ticker-sep {{ color: var(--orange); padding-right: 48px; font-size: 11px; font-family: 'DM Mono', monospace; }}
-    @keyframes ticker {{
-        0%   {{ transform: translateX(0); }}
-        100% {{ transform: translateX(-50%); }}
-    }}
-    </style>
+    # Inject header directly into parent page DOM via components.html.
+    # st.markdown runs inside an iframe so its JS cannot reliably access
+    # window.parent.  components.html also runs in an iframe but its script
+    # can reach window.parent (same origin), letting us inject the header
+    # element and CSS straight into the real page and measure the sidebar.
+    components.html(f"""
+    <script>
+    (function() {{
+        var p = window.parent.document;
 
-    <div class="burdy-header">
-      <div class="burdy-logo">
-        <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
-        <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
-      </div>
-      <div class="ticker-wrap">
-        <div class="ticker-track">
-          <span class="ticker-item">Most searched event</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Biggest hotel demand</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Biggest 24 hour growth</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Newest event announced</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Biggest travel disruption</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Hospitality news</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Highest revenue event</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Newest venue announcement</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Most viewed event</span><span class="ticker-sep">◆</span>
-          <span class="ticker-item">Weather impacts expected</span><span class="ticker-sep">◆</span>
-        </div>
-      </div>
-      <div class="live-badge">
-        <span class="live-dot"></span>
-        Live
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+        // ── Inject CSS into parent <head> once ──────────────────────────────
+        if (!p.getElementById('burdy-header-style')) {{
+            var style = p.createElement('style');
+            style.id = 'burdy-header-style';
+            style.textContent = `
+                @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+                #burdy-header {{
+                    position: fixed;
+                    top: 0;
+                    right: 0;
+                    left: 0;
+                    z-index: 1000;
+                    background: rgba(244,245,247,0.92);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    padding: 0 3rem;
+                    height: 80px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    transition: left 0.3s ease;
+                    box-sizing: border-box;
+                }}
+                #burdy-header::after {{
+                    content: '';
+                    position: absolute;
+                    bottom: 0; left: 0; right: 0;
+                    height: 3px;
+                    background: linear-gradient(90deg, #E8520A, #179948, transparent);
+                }}
+                #burdy-header .burdy-logo {{ display: flex; align-items: center; gap: 12px; }}
+                #burdy-header .live-badge {{
+                    display: flex; align-items: center; gap: 8px;
+                    background: #FFFFFF;
+                    border: 1px solid rgba(0,0,0,.09);
+                    border-radius: 999px; padding: 7px 16px;
+                    font-family: 'DM Mono', monospace;
+                    font-size: 11px; color: #6B7280;
+                    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+                    flex-shrink: 0;
+                }}
+                #burdy-header .live-dot {{
+                    width: 7px; height: 7px; border-radius: 50%;
+                    background: #179948;
+                    box-shadow: 0 0 6px #179948;
+                    display: inline-block;
+                }}
+                #burdy-header .burdy-ticker-wrap {{ overflow: hidden; flex: 1; margin: 0 40px; }}
+                #burdy-header .burdy-ticker-track {{
+                    display: flex;
+                    white-space: nowrap;
+                    animation: burdy-ticker 18s linear infinite;
+                }}
+                #burdy-header .burdy-ticker-track:hover {{ animation-play-state: paused; }}
+                #burdy-header .burdy-ticker-item {{
+                    font-family: 'DM Mono', monospace;
+                    font-size: 11px; color: #6B7280;
+                    letter-spacing: .08em; text-transform: uppercase;
+                    padding-right: 48px;
+                }}
+                #burdy-header .burdy-ticker-sep {{
+                    color: #E8520A; padding-right: 48px;
+                    font-size: 11px; font-family: 'DM Mono', monospace;
+                }}
+                @keyframes burdy-ticker {{
+                    0%   {{ transform: translateX(0); }}
+                    100% {{ transform: translateX(-50%); }}
+                }}
+            `;
+            p.head.appendChild(style);
+        }}
+
+        // ── Inject header HTML into parent <body> once ──────────────────────
+        if (!p.getElementById('burdy-header')) {{
+            var header = p.createElement('div');
+            header.id = 'burdy-header';
+            header.innerHTML = `
+                <div class="burdy-logo">
+                    <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
+                    <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
+                </div>
+                <div class="burdy-ticker-wrap">
+                    <div class="burdy-ticker-track">
+                        <span class="burdy-ticker-item">Most searched event</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Biggest hotel demand</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Biggest 24 hour growth</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Newest event announced</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Biggest travel disruption</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Hospitality news</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Highest revenue event</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Newest venue announcement</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Most viewed event</span><span class="burdy-ticker-sep">&#9670;</span>
+                        <span class="burdy-ticker-item">Weather impacts expected</span><span class="burdy-ticker-sep">&#9670;</span>
+                    </div>
+                </div>
+                <div class="live-badge">
+                    <span class="live-dot"></span>
+                    Live
+                </div>
+            `;
+            p.body.prepend(header);
+        }}
+
+        // ── Sidebar-aware left positioning ───────────────────────────────────
+        function updateHeaderLeft() {{
+            var header = p.getElementById('burdy-header');
+            if (!header) return;
+
+            var sidebar = p.querySelector('[data-testid="stSidebar"]');
+            var sidebarW = sidebar ? sidebar.getBoundingClientRect().width : 0;
+
+            // When collapsed, the sidebar shrinks but the toggle button floats
+            // separately. Find its right edge so we never cover it.
+            var toggleBtn = p.querySelector('[data-testid="stSidebarCollapsedControl"]')
+                         || p.querySelector('[data-testid="stSidebarCollapseButton"]');
+            var toggleRight = toggleBtn ? toggleBtn.getBoundingClientRect().right : 0;
+
+            header.style.left = Math.max(sidebarW, toggleRight) + 'px';
+        }}
+
+        updateHeaderLeft();
+
+        // Poll to track the sidebar CSS transition (opens/closes over ~300 ms)
+        setInterval(updateHeaderLeft, 150);
+
+        // MutationObserver as fast-path for instant response
+        try {{
+            new MutationObserver(updateHeaderLeft).observe(p.body, {{
+                attributes: true, subtree: true,
+                attributeFilter: ['style', 'class']
+            }});
+        }} catch(e) {{}}
+    }})();
+    </script>
+    """, height=0)
+
+    # ── Custom sidebar toggle injected into parent DOM ──────────────────────
+    components.html("""
+    <script>
+    (function() {
+        var p = window.parent.document;
+
+        function ensureToggle() {
+            var existing = p.getElementById('burdy-sidebar-toggle');
+            if (existing) return existing;
+
+            var toggle = p.createElement('button');
+            toggle.id = 'burdy-sidebar-toggle';
+            toggle.setAttribute('aria-label', 'Toggle sidebar');
+
+            toggle.style.position        = 'fixed';
+            toggle.style.top             = '50%';
+            toggle.style.transform       = 'translateY(-50%)';
+            toggle.style.zIndex          = '99999';
+            toggle.style.width           = '20px';
+            toggle.style.height          = '56px';
+            toggle.style.background      = '#FFFFFF';
+            toggle.style.border          = '1px solid rgba(0,0,0,0.12)';
+            toggle.style.cursor          = 'pointer';
+            toggle.style.boxShadow       = '2px 0 8px rgba(0,0,0,0.10)';
+            toggle.style.display         = 'flex';
+            toggle.style.alignItems      = 'center';
+            toggle.style.justifyContent  = 'center';
+            toggle.style.padding         = '0';
+            toggle.style.fontSize        = '12px';
+            toggle.style.color           = '#6B7280';
+            toggle.style.lineHeight      = '1';
+            toggle.style.left            = '200px';
+
+            toggle.onmouseenter = function() {
+                this.style.color       = '#E8520A';
+                this.style.borderColor = 'rgba(232,82,10,0.4)';
+            };
+            toggle.onmouseleave = function() {
+                this.style.color       = '#6B7280';
+                this.style.borderColor = 'rgba(0,0,0,0.12)';
+            };
+
+            toggle.onclick = function() {
+                var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
+                         || p.querySelector('[data-testid="stSidebarCollapsedControl"] button');
+                if (stBtn) stBtn.click();
+            };
+
+            p.body.appendChild(toggle);
+            return toggle;
+        }
+
+        function positionToggle() {
+            var toggle = ensureToggle();
+            var sidebar = p.querySelector('[data-testid="stSidebar"]');
+            var sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : 0;
+            var isCollapsed = sidebarRight < 10;
+
+            if (isCollapsed) {
+                toggle.style.left         = '0px';
+                toggle.style.borderRadius = '0 6px 6px 0';
+                toggle.style.borderLeft   = '0';
+                toggle.innerHTML          = '&#10095;'; // ›
+            } else {
+                toggle.style.left         = sidebarRight + 'px';
+                toggle.style.borderRadius = '0 6px 6px 0';
+                toggle.style.borderLeft   = '0';
+                toggle.innerHTML          = '&#10094;'; // ‹
+            }
+        }
+
+        // Run immediately, then keep synced
+        positionToggle();
+        setInterval(positionToggle, 100);
+        try {
+            new MutationObserver(positionToggle).observe(p.body, {
+                attributes: true, subtree: true,
+                attributeFilter: ['style', 'class']
+            });
+        } catch(e) {}
+    })();
+    </script>
+    """, height=1)
 
 
 
@@ -778,7 +1044,7 @@ if _current_script == _running_script:
     # =====================================================
 
     components.html("""
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
     :root {
         --orange:      #E8520A;
@@ -798,8 +1064,8 @@ if _current_script == _running_script:
     html, body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--text); overflow: hidden; }
 
     .how-section { padding: 40px 0 32px; }
-    .how-inner { display: flex; gap: 48px; align-items: flex-start; }
-    .how-left { flex: 1; min-width: 0; }
+    .how-inner { display: flex; gap: 48px; align-items: stretch; }
+    .how-left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .how-right { width: 340px; flex-shrink: 0; }
 
     .how-label {
@@ -813,11 +1079,12 @@ if _current_script == _running_script:
         color: var(--text); line-height: 1.2; margin-bottom: 28px;
     }
     .how-title em { font-style: italic; color: var(--orange); }
-    .how-steps { display: flex; flex-direction: column; gap: 4px; }
+    .how-steps { display: flex; flex-direction: column; gap: 4px; flex: 1; justify-content: space-between; }
     .how-step {
         display: flex; gap: 16px; padding: 16px 18px;
         border-radius: 12px; border: 1px solid transparent;
         cursor: pointer; transition: all .18s; background: transparent; position: relative;
+        flex: 1; align-items: center;
     }
     .how-step.active {
         background: var(--surface); border-color: var(--border);
@@ -836,7 +1103,7 @@ if _current_script == _running_script:
     }
     .how-step.active .step-num { color: var(--orange); }
     .step-title {
-        font-family: 'Syne', sans-serif; font-weight: 700;
+        font-family: 'DM Sans', sans-serif; font-weight: 700;
         font-size: 14px; letter-spacing: -.01em; color: var(--text); margin-bottom: 4px;
     }
     .step-desc { font-size: 13px; line-height: 1.55; color: var(--text-dim); display: none; }
@@ -859,7 +1126,7 @@ if _current_script == _running_script:
     .pipe-node-1::before { background: linear-gradient(90deg, var(--green), var(--orange), transparent); }
     .pipe-node-2::before { background: linear-gradient(90deg, var(--orange), transparent); }
     .pipe-node-3::before { background: linear-gradient(90deg, var(--green), transparent); }
-    .pipe-node-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; color: var(--text); margin-bottom: 3px; }
+    .pipe-node-title { font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 13px; color: var(--text); margin-bottom: 3px; }
     .pipe-node-sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-muted); letter-spacing: .04em; }
     .pipe-connector { display: flex; flex-direction: column; align-items: center; padding: 2px 0; }
     .pipe-line { width: 2px; height: 20px; background: linear-gradient(180deg, var(--orange), var(--green)); opacity: .4; }
@@ -886,7 +1153,7 @@ if _current_script == _running_script:
       <div class="how-inner">
         <div class="how-left">
           <p class="how-label">How it works</p>
-          <h2 class="how-title">From raw events to<br><em>confident action</em></h2>
+          <h2 class="how-title">From raw events to <em>confident action</em></h2>
           <div class="how-steps">
             <div class="how-step active" onclick="activate(0)">
               <span class="step-num">01</span>
@@ -981,51 +1248,449 @@ if _current_script == _running_script:
     """, height=520, scrolling=False)
 
 
-    # ── Footer slot: rendered early so it's always in the DOM ──
-    _badge_style = (
-        "font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;"
-        "text-transform:uppercase;padding:4px 10px;"
-        "border:1px solid rgba(0,0,0,.09);border-radius:4px;"
-        "color:#A0A7B4;background:#FFFFFF;text-decoration:none;"
-        "display:inline-block;"
-    )
-    _footer_html = f"""
-    <div style="
-        position:relative;
-        background:rgba(244,245,247,0.92);
-        width:100vw;
-        margin-left:calc(-50vw + 50%);
-        margin-top:48px;
-        backdrop-filter:blur(8px);
-        -webkit-backdrop-filter:blur(8px);
-        overflow:hidden;
-    ">
-      <div style="
-          position:absolute;top:0;left:0;right:0;height:3px;
-          background:linear-gradient(90deg,#E8520A,#179948,transparent);
-      "></div>
-      <div style="
-          padding:14px 3rem;
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          flex-wrap:nowrap;
-          gap:12px;
-      ">
-        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#A0A7B4;white-space:nowrap;">
-          © 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody
+    # =====================================================
+    # MID-PAGE HERO
+    # =====================================================
+
+    st.markdown("""
+    <style>
+    [data-testid="stCustomComponentV1"].mid-hero-component {
+        margin-left: -3rem !important;
+        margin-right: -3rem !important;
+        width: calc(100% + 6rem) !important;
+        max-width: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    components.html("""
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { background: transparent; width: 100%; overflow: hidden; }
+    </style>
+    <script>
+      window.addEventListener('load', function() {
+        try {
+          var el = window.frameElement;
+          if (!el) return;
+          var wrapper = el.closest('[data-testid="stCustomComponentV1"]') || el.parentElement;
+          if (!wrapper) return;
+          var rect = wrapper.getBoundingClientRect();
+          var offsetLeft  = rect.left;
+          var offsetRight = window.parent.innerWidth - rect.right;
+          wrapper.style.marginLeft  = '-' + offsetLeft  + 'px';
+          wrapper.style.marginRight = '-' + offsetRight + 'px';
+          wrapper.style.width       = window.parent.innerWidth + 'px';
+          wrapper.style.maxWidth    = 'none';
+          el.style.width            = '100%';
+          el.style.maxWidth         = 'none';
+          el.style.display          = 'block';
+        } catch(e) {}
+      });
+    </script>
+    <style>
+      .hero2 {
+        overflow: hidden;
+        font-family: 'DM Sans', sans-serif;
+        display: flex;
+        align-items: stretch;
+        min-height: 340px;
+        width: 100%;
+        position: relative;
+        background: #F4F5F7;
+      }
+      /* Left and right plain background panels with text */
+      .side2 {
+        flex: 0 0 30%;
+        background: #F4F5F7;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 32px;
+        text-align: center;
+        position: relative;
+        z-index: 2;
+      }
+      /* Centre image panel */
+      .img-centre2 {
+        flex: 0 0 40%;
+        position: relative;
+        overflow: hidden;
+      }
+      .img-centre2 img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        display: block;
+        animation: kenburns2 14s ease-in-out infinite alternate;
+        transform-origin: center center;
+      }
+      @keyframes kenburns2 {
+        0%   { transform: scale(1) translateX(0) translateY(0); }
+        100% { transform: scale(1.08) translateX(-1%) translateY(-1%); }
+      }
+      /* Fade image edges into background */
+      .img-centre2::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(to right,
+          #F4F5F7 0%,
+          transparent 18%,
+          transparent 82%,
+          #F4F5F7 100%);
+      }
+      .headline2 {
+        font-weight: 800;
+        font-size: 26px;
+        letter-spacing: -.03em;
+        color: #141518;
+        margin-bottom: 12px;
+        line-height: 1.2;
+      }
+      .body-text2 {
+        font-size: 13px;
+        color: #6B7280;
+        line-height: 1.7;
+        margin-bottom: 24px;
+      }
+      .stats2 {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        width: 100%;
+      }
+      .stat-row2 {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .stat-val2 {
+        font-weight: 800;
+        font-size: 18px;
+        color: #E8520A;
+        letter-spacing: -.02em;
+        white-space: nowrap;
+      }
+      .stat-lbl2 {
+        font-family: 'DM Mono', monospace;
+        font-size: 9px;
+        color: #A0A7B4;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        text-align: right;
+        line-height: 1.4;
+      }
+      .stat-divider2 {
+        height: 1px;
+        background: rgba(0,0,0,.07);
+        width: 100%;
+      }
+    </style>
+
+    <div class="hero2">
+
+      <!-- Left side: headline + description -->
+      <div class="side2">
+        <div class="headline2">What events do<br>for <span style="font-style:italic;color:#E8520A;">your business</span></div>
+        <div class="body-text2">Every event creates a surge of demand. Hotels fill up, delivery orders spike, footfall shifts. Burdy prepares you for everything in your area.</div>
+      </div>
+
+      <!-- Centre: image only -->
+      <div class="img-centre2">
+        <img src="https://images.unsplash.com/photo-1531152369337-1d0b0b9ef20d?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="City street crowd" />
+      </div>
+
+      <!-- Right side: stats -->
+      <div class="side2">
+        <div class="stats2">
+          <div class="stat-row2">
+            <div class="stat-val2">20,000+</div>
+            <div class="stat-lbl2">Events tracked</div>
+          </div>
+          <div class="stat-divider2"></div>
+          <div class="stat-row2">
+            <div class="stat-val2">5</div>
+            <div class="stat-lbl2">Industries served</div>
+          </div>
+          <div class="stat-divider2"></div>
+          <div class="stat-row2">
+            <div class="stat-val2">15 min</div>
+            <div class="stat-lbl2">Update frequency</div>
+          </div>
+          <div class="stat-divider2"></div>
+          <div class="stat-row2">
+            <div class="stat-val2">90 days</div>
+            <div class="stat-lbl2">Advance visibility</div>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:nowrap;">
-          <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Ticketmaster.co.uk</a>
-          <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Skiddle.com</a>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Github.com</a>
-          <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Supabase.com</a>
-          <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">PostCodes.io</a>
-          <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Streamlit.io</a>
-          <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Mapbox.com</a>
+      </div>
+
+    </div>
+    """, height=370, scrolling=False)
+
+
+    # =====================================================
+    # WHO IS IT FOR
+    # =====================================================
+
+    components.html("""
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+    --orange:#E8520A; --orange-dim:#c94308; --orange-glow:rgba(232,82,10,.12);
+    --green:#179948; --green-glow:rgba(23,153,72,.12);
+    --bg:#F4F5F7; --surface:#FFFFFF; --surface2:#F0F1F4;
+    --border:rgba(0,0,0,.09); --text:#141518; --text-dim:#6B7280; --text-muted:#A0A7B4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);overflow:hidden;}
+
+.section{padding:40px 0 32px;}
+.section-label{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;}
+.section-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--text);line-height:1.2;margin-bottom:28px;}
+.section-title em{font-style:italic;color:var(--orange);}
+
+.panels-wrap{display:flex;gap:48px;align-items:stretch;}
+.tabs-col{width:200px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;justify-content:space-between;}
+.tab{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid transparent;cursor:pointer;transition:all .18s;background:transparent;position:relative;flex:1;}
+.tab.active{background:var(--surface);border-color:var(--border);box-shadow:0 2px 10px rgba(0,0,0,.06);}
+.tab.active::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 2px 2px 0;background:linear-gradient(180deg,var(--orange),var(--green));}
+.tab:hover:not(.active){background:var(--surface2);}
+.tab-icon{font-size:16px;width:20px;text-align:center;}
+.tab-label{font-family:'DM Sans',sans-serif;font-weight:500;font-size:13px;color:var(--text-dim);}
+.tab.active .tab-label{color:var(--orange);font-weight:600;}
+
+.panel-col{flex:1;min-width:0;}
+.panel{display:none;}
+.panel.active{display:flex;gap:32px;align-items:stretch;}
+
+.panel-content{flex:1;min-width:0;}
+.panel-tag{display:inline-block;background:var(--orange-glow);border:1px solid rgba(232,82,10,.2);border-radius:999px;padding:4px 12px;font-family:'DM Mono',monospace;font-size:10px;color:var(--orange);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}
+.panel-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:18px;letter-spacing:-.02em;color:var(--text);line-height:1.3;margin-bottom:10px;}
+.panel-desc{font-size:13px;line-height:1.6;color:var(--text-dim);margin-bottom:20px;}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
+.metric::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--orange),transparent);}
+.metric-num{font-family:'DM Sans',sans-serif;font-size:22px;font-weight:800;color:var(--orange);letter-spacing:-.02em;margin-bottom:3px;}
+.metric-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.04em;line-height:1.4;}
+
+.panel-visual{width:280px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;position:relative;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05);display:flex;flex-direction:column;}
+.panel-visual::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--orange),var(--green),transparent);}
+.vis-label{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;}
+
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.bar-name{font-family:'DM Mono',monospace;font-size:10px;color:var(--text-dim);width:110px;flex-shrink:0;}
+.bar-track{flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s ease;}
+.bar-val{font-family:'DM Mono',monospace;font-size:10px;color:var(--orange);width:36px;text-align:right;flex-shrink:0;}
+
+.sched-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.sched-day{font-family:'DM Mono',monospace;font-size:10px;width:44px;flex-shrink:0;}
+.sched-bar{flex:1;height:10px;border-radius:4px;}
+.sched-val{font-family:'DM Mono',monospace;font-size:10px;width:52px;text-align:right;flex-shrink:0;}
+
+.venue-badges{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
+.venue-badge{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);}
+.venue-name{font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:var(--text);}
+.venue-pct{font-family:'DM Mono',monospace;font-size:12px;font-weight:700;color:var(--orange);}
+
+@media(max-width:640px){.panels-wrap{flex-direction:column;}.tabs-col{width:100%;flex-direction:row;flex-wrap:wrap;}.panel.active{flex-direction:column;}.panel-visual{width:100%;}}
+</style>
+
+<div class="section">
+  <p class="section-label">Who is it for</p>
+  <h2 class="section-title">Built for every team that <em>runs on demand</em></h2>
+
+  <div class="panels-wrap">
+    <div class="tabs-col" id="tabs">
+      <div class="tab active" onclick="showPanel(0)"><span class="tab-icon">🏨</span><span class="tab-label">Hospitality</span></div>
+      <div class="tab" onclick="showPanel(1)"><span class="tab-icon">🍔</span><span class="tab-label">Food & Delivery</span></div>
+      <div class="tab" onclick="showPanel(2)"><span class="tab-icon">🛍</span><span class="tab-label">Retail</span></div>
+      <div class="tab" onclick="showPanel(3)"><span class="tab-icon">🚕</span><span class="tab-label">Transport</span></div>
+      <div class="tab" onclick="showPanel(4)"><span class="tab-icon">👥</span><span class="tab-label">Staffing</span></div>
+    </div>
+
+    <div class="panel-col" id="panels">
+
+      <!-- Hospitality -->
+      <div class="panel active">
+        <div class="panel-content">
+          <span class="panel-tag">🏨 Hospitality</span>
+          <h3 class="panel-title">Stop leaving rooms empty when the city's full</h3>
+          <p class="panel-desc">When 80,000 fans arrive for a stadium concert, your hotel should already know. Burdy gives revenue managers event context 90 days ahead — so every night is priced perfectly.</p>
+          <div class="metrics">
+            <div class="metric"><div class="metric-num">+31%</div><div class="metric-label">Average RevPAR uplift in event-adjacent periods</div></div>
+            <div class="metric"><div class="metric-num">90</div><div class="metric-label">Days of advance visibility on high-demand nights</div></div>
+            <div class="metric"><div class="metric-num">3.4×</div><div class="metric-label">Return on investment across hotel customers</div></div>
+            <div class="metric"><div class="metric-num">94%</div><div class="metric-label">Forecast accuracy on 7-day occupancy spikes</div></div>
+          </div>
+        </div>
+        <div class="panel-visual">
+          <div class="vis-label">Demand score by event type</div>
+          <div class="bar-row"><span class="bar-name">Stadium concerts</span><div class="bar-track"><div class="bar-fill" style="width:92%;background:linear-gradient(90deg,#E8520A,#179948);"></div></div><span class="bar-val">+92%</span></div>
+          <div class="bar-row"><span class="bar-name">Major sports</span><div class="bar-track"><div class="bar-fill" style="width:78%;background:linear-gradient(90deg,#E8520A,#179948);"></div></div><span class="bar-val">+78%</span></div>
+          <div class="bar-row"><span class="bar-name">Conferences</span><div class="bar-track"><div class="bar-fill" style="width:64%;background:linear-gradient(90deg,#E8520A,#179948);"></div></div><span class="bar-val">+64%</span></div>
+          <div class="bar-row"><span class="bar-name">Public holidays</span><div class="bar-track"><div class="bar-fill" style="width:55%;background:linear-gradient(90deg,#179948,#E8520A);"></div></div><span class="bar-val">+55%</span></div>
+          <div class="bar-row"><span class="bar-name">Exhibitions</span><div class="bar-track"><div class="bar-fill" style="width:41%;background:linear-gradient(90deg,#179948,#E8520A);"></div></div><span class="bar-val">+41%</span></div>
+          <div style="margin-top:12px;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);">Avg. across 400+ properties · Last 12 months</div>
+        </div>
+      </div>
+
+      <!-- Food & Delivery -->
+      <div class="panel">
+        <div class="panel-content">
+          <span class="panel-tag">🍔 Food & Delivery</span>
+          <h3 class="panel-title">Right riders, right zones — before demand peaks</h3>
+          <p class="panel-desc">Match courier supply to demand before the surge hits. Burdy's 15-minute event updates let ops teams pre-position drivers and kitchens with up to 4-hour lead times.</p>
+          <div class="metrics">
+            <div class="metric"><div class="metric-num">–22%</div><div class="metric-label">Reduction in unfulfilled orders on event nights</div></div>
+            <div class="metric"><div class="metric-num">4hrs</div><div class="metric-label">Average lead time for demand signal delivery</div></div>
+            <div class="metric"><div class="metric-num">+18%</div><div class="metric-label">Gross order value on pre-positioned event days</div></div>
+            <div class="metric"><div class="metric-num">60+</div><div class="metric-label">Cities with hyperlocal 500m-radius coverage</div></div>
+          </div>
+        </div>
+        <div class="panel-visual">
+          <div class="vis-label">Rider demand — Manchester centre</div>
+          <div style="height:160px;position:relative;">
+            <svg viewBox="0 0 240 140" width="100%" height="140" style="display:block;">
+              <line x1="0" y1="70" x2="240" y2="70" stroke="rgba(0,0,0,.06)" stroke-width="1"/>
+              <line x1="0" y1="35" x2="240" y2="35" stroke="rgba(0,0,0,.06)" stroke-width="1"/>
+              <line x1="0" y1="105" x2="240" y2="105" stroke="rgba(0,0,0,.06)" stroke-width="1"/>
+              <path d="M0 90 L40 88 L80 85 L120 80 L160 78 L200 76 L240 74" fill="none" stroke="rgba(0,0,0,.15)" stroke-width="1.5" stroke-dasharray="4 3"/>
+              <path d="M0 90 L40 88 L80 82 L100 62 L120 38 L140 24 L160 32 L180 52 L200 72 L240 82" fill="none" stroke="#E8520A" stroke-width="2" stroke-linecap="round"/>
+              <path d="M0 90 L40 88 L80 82 L100 62 L120 38 L140 24 L160 32 L180 52 L200 72 L240 82 L240 140 L0 140Z" fill="rgba(232,82,10,.07)"/>
+              <line x1="140" y1="4" x2="140" y2="140" stroke="rgba(232,82,10,.3)" stroke-width="1" stroke-dasharray="3 3"/>
+              <rect x="116" y="2" width="48" height="16" rx="3" fill="rgba(232,82,10,.12)"/>
+              <text x="140" y="14" text-anchor="middle" font-family="DM Mono,sans-serif" font-size="8" fill="#E8520A">EVENT 20:00</text>
+              <text x="4" y="136" font-family="DM Mono,sans-serif" font-size="8" fill="#A0A7B4">12:00</text>
+              <text x="124" y="136" font-family="DM Mono,sans-serif" font-size="8" fill="#A0A7B4">20:00</text>
+              <text x="210" y="136" font-family="DM Mono,sans-serif" font-size="8" fill="#A0A7B4">00:00</text>
+            </svg>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:8px;">
+            <span style="display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);"><span style="display:inline-block;width:14px;height:2px;border-top:2px dashed rgba(0,0,0,.2);"></span>Baseline</span>
+            <span style="display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);"><span style="display:inline-block;width:14px;height:2px;background:#E8520A;border-radius:1px;"></span>Event demand</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Retail -->
+      <div class="panel">
+        <div class="panel-content">
+          <span class="panel-tag">🛍 Retail</span>
+          <h3 class="panel-title">Stock the right items before the crowds arrive</h3>
+          <p class="panel-desc">From football strips to festival gear, Burdy predicts product-level demand shifts based on nearby events — letting buyers and replenishment teams act weeks in advance.</p>
+          <div class="metrics">
+            <div class="metric"><div class="metric-num">–19%</div><div class="metric-label">Reduction in stockouts on high-demand event weekends</div></div>
+            <div class="metric"><div class="metric-num">+27%</div><div class="metric-label">Increase in event-related category sell-through</div></div>
+            <div class="metric"><div class="metric-num">21</div><div class="metric-label">Days average advance notice for replenishment</div></div>
+            <div class="metric"><div class="metric-num">8,400+</div><div class="metric-label">Retail locations using Burdy globally</div></div>
+          </div>
+        </div>
+        <div class="panel-visual">
+          <div class="vis-label">Weekly footfall index — city centre</div>
+          <div style="display:flex;align-items:flex-end;gap:6px;height:140px;padding-top:20px;">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:rgba(232,82,10,.25);border-radius:4px 4px 0 0;height:30px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);">Mon</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:rgba(232,82,10,.3);border-radius:4px 4px 0 0;height:40px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);">Tue</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:rgba(232,82,10,.3);border-radius:4px 4px 0 0;height:35px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);">Wed</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:rgba(232,82,10,.35);border-radius:4px 4px 0 0;height:45px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);">Thu</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative;"><div style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);background:rgba(232,82,10,.12);color:#E8520A;font-size:8px;padding:2px 6px;border-radius:4px;white-space:nowrap;font-family:'DM Mono',monospace;">Festival</div><div style="width:100%;background:#E8520A;border-radius:4px 4px 0 0;height:96px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--orange);">Fri</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:#179948;border-radius:4px 4px 0 0;height:118px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--green);">Sat</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;background:rgba(23,153,72,.5);border-radius:4px 4px 0 0;height:80px;"></div><span style="font-family:'DM Mono',monospace;font-size:9px;color:var(--text-muted);">Sun</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transport -->
+      <div class="panel">
+        <div class="panel-content">
+          <span class="panel-tag">🚕 Transport</span>
+          <h3 class="panel-title">Get drivers where they need to be — before passengers ask</h3>
+          <p class="panel-desc">Event-aware dispatch gives rideshare and taxi fleets a strategic advantage. Know when 20,000 people will be exiting a venue 6 hours before it happens.</p>
+          <div class="metrics">
+            <div class="metric"><div class="metric-num">–14%</div><div class="metric-label">Driver wait time during post-event surge periods</div></div>
+            <div class="metric"><div class="metric-num">+35%</div><div class="metric-label">Trips completed per driver on event evenings</div></div>
+            <div class="metric"><div class="metric-num">6hrs</div><div class="metric-label">Lead time for surge-zone pre-positioning alerts</div></div>
+            <div class="metric"><div class="metric-num">98%</div><div class="metric-label">Event start-time accuracy within 15 minutes</div></div>
+          </div>
+        </div>
+        <div class="panel-visual">
+          <div class="vis-label">Surge zone pre-positioning</div>
+          <div class="venue-badges">
+            <div class="venue-badge"><span class="venue-name">Wembley Stadium</span><span class="venue-pct">+220%</span></div>
+            <div class="venue-badge"><span class="venue-name">O2 Arena</span><span class="venue-pct">+180%</span></div>
+            <div class="venue-badge"><span class="venue-name">Twickenham</span><span class="venue-pct">+95%</span></div>
+            <div class="venue-badge"><span class="venue-name">AO Arena MCR</span><span class="venue-pct">+140%</span></div>
+            <div class="venue-badge"><span class="venue-name">Tottenham Hotspur</span><span class="venue-pct">+160%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Staffing -->
+      <div class="panel">
+        <div class="panel-content">
+          <span class="panel-tag">👥 Staffing</span>
+          <h3 class="panel-title">Schedule the right people — not just enough of them</h3>
+          <p class="panel-desc">Workforce platforms can finally build rosters that reflect demand reality. Burdy's event feed flags demand spikes automatically with 2-week advance notice.</p>
+          <div class="metrics">
+            <div class="metric"><div class="metric-num">–28%</div><div class="metric-label">Reduction in last-minute shift scrambles</div></div>
+            <div class="metric"><div class="metric-num">+16%</div><div class="metric-label">Employee satisfaction on event-week schedules</div></div>
+            <div class="metric"><div class="metric-num">2 wks</div><div class="metric-label">Advance schedule building window enabled</div></div>
+            <div class="metric"><div class="metric-num">40+</div><div class="metric-label">WFM platform integrations including Skedulo</div></div>
+          </div>
+        </div>
+        <div class="panel-visual">
+          <div class="vis-label">Roster demand signal — next 14 days</div>
+          <div class="sched-row"><span class="sched-day" style="color:var(--text-muted);">Mon 2</span><div class="sched-bar" style="background:rgba(232,82,10,.18);"></div><span class="sched-val" style="color:var(--text-muted);">Normal</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:var(--text-muted);">Tue 3</span><div class="sched-bar" style="background:rgba(232,82,10,.2);"></div><span class="sched-val" style="color:var(--text-muted);">Normal</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:var(--text-muted);">Wed 4</span><div class="sched-bar" style="background:rgba(232,82,10,.2);"></div><span class="sched-val" style="color:var(--text-muted);">Normal</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:#c94308;">Thu 5</span><div class="sched-bar" style="background:rgba(232,82,10,.5);"></div><span class="sched-val" style="color:#c94308;">+45% ⚑</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:#E8520A;">Fri 6</span><div class="sched-bar" style="background:#E8520A;"></div><span class="sched-val" style="color:#E8520A;">+130% ⚑⚑</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:#E8520A;">Sat 7</span><div class="sched-bar" style="background:#179948;"></div><span class="sched-val" style="color:#179948;">+185% ⚑⚑</span></div>
+          <div class="sched-row"><span class="sched-day" style="color:var(--text-muted);">Sun 8</span><div class="sched-bar" style="background:rgba(232,82,10,.25);"></div><span class="sched-val" style="color:var(--text-muted);">+30%</span></div>
+          <p style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:12px;">⚑ Burdy-detected event driving demand spike</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function showPanel(i) {
+  document.querySelectorAll('.tab').forEach((t,j) => t.classList.toggle('active', j===i));
+  document.querySelectorAll('.panel').forEach((p,j) => p.classList.toggle('active', j===i));
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+}
+window.addEventListener('load', function() {
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+});
+</script>
+""", height=580, scrolling=False)
+
+
+    # ── Footer: inline at the bottom of page content ──────────────────────
+    st.markdown("""
+    <div class="burdy-footer-wrap">
+      <div class="burdy-footer">
+        <span class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</span>
+        <div class="footer-badges">
+          <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" class="footer-badge">Ticketmaster.co.uk</a>
+          <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Skiddle.com</a>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Github.com</a>
+          <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Supabase.com</a>
+          <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" class="footer-badge">PostCodes.io</a>
+          <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" class="footer-badge">Streamlit.io</a>
+          <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Mapbox.com</a>
         </div>
       </div>
     </div>
-    """
-    footer_slot = st.empty()
-    footer_slot.markdown(_footer_html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
