@@ -157,7 +157,7 @@ section.main .stButton > button:hover,
     display: none !important;
 }
 
-/* Native collapse button — visually hidden but kept in DOM so JS can click it */
+/* Native collapse button — visually hidden but in DOM so JS can click it */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"] {
     position: fixed !important;
@@ -628,6 +628,14 @@ if _current_script == _running_script:
                     0%   {{ transform: translateX(0); }}
                     100% {{ transform: translateX(-50%); }}
                 }}
+                @media (max-width: 768px) {{
+                    #burdy-header {{
+                        padding: 0 1rem !important;
+                        height: 56px !important;
+                    }}
+                    #burdy-header .burdy-ticker-wrap {{ display: none !important; }}
+                    #burdy-header .live-badge {{ padding: 5px 10px !important; font-size: 10px !important; }}
+                }}
             `;
             p.head.appendChild(style);
         }}
@@ -740,12 +748,8 @@ if _current_script == _running_script:
 
             toggle.onclick = function() {
                 var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
-                         || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
-                         || p.querySelector('[data-testid="stSidebarCollapseButton"]')
-                         || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
-                if (stBtn) {
-                    stBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                }
+                         || p.querySelector('[data-testid="stSidebarCollapsedControl"] button');
+                if (stBtn) stBtn.click();
             };
 
             p.body.appendChild(toggle);
@@ -838,6 +842,10 @@ if _current_script == _running_script:
           el.style.maxWidth         = 'none';
           el.style.display          = 'block';
         } catch(e) {}
+      });
+      window.addEventListener('resize', function() {
+        var h = document.body.scrollHeight;
+        if (window.frameElement) window.frameElement.style.height = h + 'px';
       });
     </script>
     <style>
@@ -968,6 +976,16 @@ if _current_script == _running_script:
         margin-top: 2px;
       }
       .divider { width: 1px; height: 32px; background: rgba(0,0,0,.09); }
+      @media (max-width: 600px) {
+        .hero { flex-direction: column; min-height: unset; }
+        .img-panel { display: none !important; }
+        .centre { padding: 32px 20px 28px; }
+        .headline { font-size: 20px; }
+        .body-text { font-size: 13px; margin-bottom: 20px; }
+        .stats { gap: 12px; }
+        .stat-val { font-size: 16px; }
+        .divider { display: none; }
+      }
     </style>
 
     <div class="hero">
@@ -1255,6 +1273,10 @@ if _current_script == _running_script:
       var h = document.body.scrollHeight;
       if (window.frameElement) window.frameElement.style.height = h + 'px';
     });
+    window.addEventListener('resize', function() {
+      var h = document.body.scrollHeight;
+      if (window.frameElement) window.frameElement.style.height = h + 'px';
+    });
     </script>
     """, height=520, scrolling=False)
 
@@ -1390,6 +1412,14 @@ if _current_script == _running_script:
         height: 1px;
         background: rgba(0,0,0,.07);
         width: 100%;
+      }
+      @media (max-width: 600px) {
+        .hero2 { flex-direction: column; min-height: unset; }
+        .img-centre2 { display: none !important; }
+        .side2 { flex: unset; width: 100%; padding: 28px 20px; }
+        .headline2 { font-size: 20px; }
+        .body-text2 { font-size: 13px; }
+        .stat-val2 { font-size: 15px; }
       }
     </style>
 
@@ -1797,6 +1827,13 @@ window.addEventListener('load', function() {
         flex-shrink: 0;
         margin-top: 6px;
       }
+      @media (max-width: 600px) {
+        .hero3 { flex-direction: column; min-height: unset; }
+        .img-left3 { display: none !important; }
+        .text-right3 { padding: 32px 20px; }
+        .headline3 { font-size: 20px; }
+        .body3 { font-size: 13px; margin-bottom: 20px; }
+      }
     </style>
 
     <div class="hero3">
@@ -1841,7 +1878,8 @@ html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text
 .section-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--text);line-height:1.2;margin-bottom:0;text-align:left;}
 .section-sub{font-size:14px;color:var(--text-dim);line-height:1.7;margin:16px 0 0;text-align:left;max-width:600px;}
 
-.compare-table-wrap{margin-top:32px;overflow-x:auto;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,.07);}
+.compare-table-wrap{margin-top:32px;overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,.07);}
+.compare-table{min-width:560px;}
 .compare-table{width:100%;border-collapse:collapse;background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;}
 .compare-table thead tr{background:var(--surface2);}
 .compare-table th{padding:16px 20px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:500;text-align:left;border-bottom:1px solid var(--border);}
@@ -2056,6 +2094,13 @@ window.addEventListener('load', function() {
         flex-shrink: 0;
         margin-top: 6px;
       }
+      @media (max-width: 600px) {
+        .hero4 { flex-direction: column; min-height: unset; }
+        .img-right4 { display: none !important; }
+        .text-left4 { padding: 32px 20px; }
+        .headline4 { font-size: 20px; }
+        .body4 { font-size: 13px; margin-bottom: 20px; }
+      }
     </style>
 
     <div class="hero4">
@@ -2129,7 +2174,17 @@ html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text
 .featured-btn{background:var(--orange);border:none;color:#fff;}
 .featured-btn:hover{background:var(--orange-dim);opacity:1;color:#fff;box-shadow:0 5px 20px rgba(232,82,10,.3);}
 
-@media(max-width:700px){.pricing-grid{grid-template-columns:1fr;}}
+@media(max-width:700px){
+  .pricing-grid{grid-template-columns:1fr;}
+  .pricing-section{padding:32px 0 24px;}
+  .section-title{font-size:20px;}
+  .price-value{font-size:34px;}
+  .pricing-toggle{margin:20px 0;}
+}
+@media(max-width:480px){
+  .pricing-inner{padding:0 4px;}
+  .price-card{padding:20px 16px;}
+}
 </style>
 
 <div class="pricing-section">
@@ -2178,7 +2233,7 @@ html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text
           <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Unlimited events</li>
           <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> 90-day demand forecasts</li>
           <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Hyperlocal 500m radius</li>
-          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Webhook &amp; Slack alerts</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Webhook & Slack alerts</li>
           <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Revenue attribution</li>
           <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Priority support</li>
         </ul>
