@@ -386,6 +386,229 @@ a.footer-badge:hover {
 </style>
 """, unsafe_allow_html=True)
 
+import streamlit as st
+import streamlit.components.v1 as components
+
+# =====================================================
+# SIDEBAR — paste this entire block into any associated
+# page, directly after st.set_page_config()
+# =====================================================
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+:root {
+    --orange:      #E8520A;
+    --orange-dim:  #c94308;
+    --orange-glow: rgba(232,82,10,.12);
+    --green:       #179948;
+    --green-dim:   #0f7035;
+    --green-glow:  rgba(23,153,72,.12);
+    --bg:          #F4F5F7;
+    --surface:     #FFFFFF;
+    --surface2:    #F0F1F4;
+    --border:      rgba(0,0,0,.09);
+    --text:        #141518;
+    --text-dim:    #6B7280;
+    --text-muted:  #A0A7B4;
+}
+
+/* ── Sidebar panel ── */
+[data-testid="stSidebar"] {
+    background: var(--bg) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 2px 0 16px rgba(0,0,0,.06) !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: var(--bg) !important;
+    padding-top: 1rem !important;
+}
+
+/* Orange → green accent bar along right edge */
+[data-testid="stSidebar"]::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--orange), var(--green), transparent);
+    z-index: 10;
+}
+
+/* ── Nav links ── */
+[data-testid="stSidebarNavLink"] {
+    border-radius: 8px !important;
+    margin: 0 6px !important;
+    padding: 0 10px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: -.01em !important;
+    color: var(--text-dim) !important;
+    transition: background .15s, color .15s !important;
+    border: 1px solid transparent !important;
+}
+[data-testid="stSidebarNavLink"]:hover {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.2) !important;
+}
+[data-testid="stSidebarNavLink"][aria-current="page"],
+[data-testid="stSidebarNavLink"].active {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.25) !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSidebarNavLink"] svg { color: inherit !important; }
+
+/* ── Headings ── */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+    color: var(--text-muted) !important;
+    margin: 20px 0 8px !important;
+}
+
+/* ── Body text & labels ── */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 13px !important;
+    color: var(--text-dim) !important;
+}
+
+/* ── Inputs & selects ── */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] [data-baseweb="select"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+[data-testid="stSidebar"] input:focus {
+    border-color: var(--orange) !important;
+    box-shadow: 0 0 0 3px var(--orange-glow) !important;
+}
+
+/* ── Hide stButtons inside sidebar ── */
+[data-testid="stSidebar"] .stButton,
+[data-testid="stSidebar"] .stButton > button {
+    display: none !important;
+}
+
+/* ── Dividers ── */
+[data-testid="stSidebar"] hr {
+    border-top: 1px solid var(--border) !important;
+    margin: 16px 0 !important;
+}
+
+/* ── Scrollbar ── */
+[data-testid="stSidebar"] ::-webkit-scrollbar { width: 4px; }
+[data-testid="stSidebar"] ::-webkit-scrollbar-track { background: var(--bg); }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Native collapse button: hidden visually but NOT display:none
+      so it stays in the DOM and JS can click it ── */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"] {
+    position: fixed !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    z-index: -1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Custom ‹ / › toggle ────────────────────────────────────────────────────
+# Injects a slim tab that floats at the sidebar edge and clicks Streamlit's
+# native (but visually hidden) collapse button.
+# NOTE: the native button must NOT be display:none — see CSS above.
+components.html("""
+<script>
+(function() {
+    var p = window.parent.document;
+
+    function ensureToggle() {
+        var existing = p.getElementById('burdy-sidebar-toggle');
+        if (existing) return existing;
+
+        var toggle = p.createElement('button');
+        toggle.id = 'burdy-sidebar-toggle';
+        toggle.setAttribute('aria-label', 'Toggle sidebar');
+
+        toggle.style.position       = 'fixed';
+        toggle.style.top            = '50%';
+        toggle.style.transform      = 'translateY(-50%)';
+        toggle.style.zIndex         = '99999';
+        toggle.style.width          = '20px';
+        toggle.style.height         = '56px';
+        toggle.style.background     = '#FFFFFF';
+        toggle.style.border         = '1px solid rgba(0,0,0,0.12)';
+        toggle.style.borderLeft     = '0';
+        toggle.style.borderRadius   = '0 6px 6px 0';
+        toggle.style.cursor         = 'pointer';
+        toggle.style.boxShadow      = '2px 0 8px rgba(0,0,0,0.10)';
+        toggle.style.display        = 'flex';
+        toggle.style.alignItems     = 'center';
+        toggle.style.justifyContent = 'center';
+        toggle.style.padding        = '0';
+        toggle.style.fontSize       = '12px';
+        toggle.style.color          = '#6B7280';
+        toggle.style.lineHeight     = '1';
+
+        toggle.onmouseenter = function() {
+            this.style.color       = '#E8520A';
+            this.style.borderColor = 'rgba(232,82,10,0.4)';
+        };
+        toggle.onmouseleave = function() {
+            this.style.color       = '#6B7280';
+            this.style.borderColor = 'rgba(0,0,0,0.12)';
+        };
+
+        toggle.onclick = function() {
+            var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
+                     || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                     || p.querySelector('[data-testid="stSidebarCollapseButton"]')
+                     || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
+            if (stBtn) stBtn.click();
+        };
+
+        p.body.appendChild(toggle);
+        return toggle;
+    }
+
+    function positionToggle() {
+        var toggle = ensureToggle();
+        var sidebar = p.querySelector('[data-testid="stSidebar"]');
+        var sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : 0;
+        var isCollapsed = sidebarRight < 10;
+        toggle.style.left = (isCollapsed ? 0 : sidebarRight) + 'px';
+        toggle.innerHTML  = isCollapsed ? '&#10095;' : '&#10094;';
+    }
+
+    positionToggle();
+    setInterval(positionToggle, 100);
+    try {
+        new MutationObserver(positionToggle).observe(p.body, {
+            attributes: true, subtree: true,
+            attributeFilter: ['style', 'class']
+        });
+    } catch(e) {}
+})();
+</script>
+""", height=1)
+
 # =====================================================
 # CONFIG
 # =====================================================

@@ -62,7 +62,7 @@ html, body, [class*="css"] {
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
 
 .block-container {
-    padding: 2rem 3rem 80px !important;
+    padding: 0 3rem 80px !important;
     max-width: 1400px !important;
 }
 .element-container:has(iframe) {
@@ -157,10 +157,15 @@ section.main .stButton > button:hover,
     display: none !important;
 }
 
-/* Hide Streamlit native toggle — we use our own injected button */
+/* Native collapse button — visually hidden but kept in DOM so JS can click it */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"] {
-    display: none !important;
+    position: fixed !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    z-index: -1 !important;
 }
 div[data-testid="metric-container"] {
     background: var(--surface) !important;
@@ -278,13 +283,15 @@ h3 {
 .burdy-footer-wrap {
     position: relative;
     margin-top: 48px;
-    margin-left: -3rem;
-    margin-right: -3rem;
+    margin-left: calc(-50vw + 50%);
+    width: 100vw;
     margin-bottom: -80px;
     background: rgba(244,245,247,0.92);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     overflow: hidden;
+    box-sizing: border-box;
+    transition: margin-left 0.3s ease, width 0.3s ease;
 }
 .burdy-footer-wrap::before {
     content: '';
@@ -441,7 +448,7 @@ a.footer-badge:hover {
 
 @media (max-width: 768px) {
     .block-container {
-        padding: 2rem 1rem 60px !important;
+        padding: 0 1rem 60px !important;
     }
 
     /* Hero — hide images, centre text full width */
@@ -733,8 +740,12 @@ if _current_script == _running_script:
 
             toggle.onclick = function() {
                 var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
-                         || p.querySelector('[data-testid="stSidebarCollapsedControl"] button');
-                if (stBtn) stBtn.click();
+                         || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                         || p.querySelector('[data-testid="stSidebarCollapseButton"]')
+                         || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
+                if (stBtn) {
+                    stBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                }
             };
 
             p.body.appendChild(toggle);
@@ -1180,7 +1191,7 @@ if _current_script == _running_script:
               <span class="step-num">04</span>
               <div>
                 <div class="step-title">Optimise — and get smarter over time</div>
-                <div class="step-desc">Prism learns from your actuals. Feed back revenue, footfall, or staffing data and watch forecast accuracy improve every cycle.</div>
+                <div class="step-desc">Burdy learns from your actuals. Feed back revenue, footfall, or staffing data and watch forecast accuracy improve every cycle.</div>
               </div>
             </div>
           </div>
@@ -1251,17 +1262,6 @@ if _current_script == _running_script:
     # =====================================================
     # MID-PAGE HERO
     # =====================================================
-
-    st.markdown("""
-    <style>
-    [data-testid="stCustomComponentV1"].mid-hero-component {
-        margin-left: -3rem !important;
-        margin-right: -3rem !important;
-        width: calc(100% + 6rem) !important;
-        max-width: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
     components.html("""
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1373,7 +1373,7 @@ if _current_script == _running_script:
       .stat-val2 {
         font-weight: 800;
         font-size: 18px;
-        color: #E8520A;
+        color: #179948;
         letter-spacing: -.02em;
         white-space: nowrap;
       }
@@ -1397,8 +1397,8 @@ if _current_script == _running_script:
 
       <!-- Left side: headline + description -->
       <div class="side2">
-        <div class="headline2">What events do<br>for <span style="font-style:italic;color:#E8520A;">your business</span></div>
-        <div class="body-text2">Every event creates a surge of demand. Hotels fill up, delivery orders spike, footfall shifts. Burdy prepares you for everything in your area.</div>
+        <div class="headline2">What events do<br>for <span style="font-style:italic;color:#179948;">your business</span></div>
+        <div class="body-text2">Every event creates a ripple of demand that reaches far beyond the venue gates. Hotels fill up, delivery orders spike, footfall shifts, and consumer spending concentrates in ways that are entirely predictable — if you have the right intelligence. From a major sporting fixture to a local food festival, Burdy connects your business to the events shaping your area, giving you the foresight to act before demand arrives.</div>
       </div>
 
       <!-- Centre: image only -->
@@ -1434,6 +1434,7 @@ if _current_script == _running_script:
     </div>
     """, height=370, scrolling=False)
 
+    st.markdown("<style>iframe[title='streamlit_components.v1.html'] { margin-bottom: -2rem !important; display: block; } .element-container:has(iframe) { margin-bottom: 0 !important; padding-bottom: 0 !important; } </style>", unsafe_allow_html=True)
 
     # =====================================================
     # WHO IS IT FOR
@@ -1451,7 +1452,7 @@ if _current_script == _running_script:
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);overflow:hidden;}
 
-.section{padding:40px 0 32px;}
+.section{padding:40px 0 0;}
 .section-label{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;}
 .section-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--text);line-height:1.2;margin-bottom:28px;}
 .section-title em{font-style:italic;color:var(--orange);}
@@ -1674,23 +1675,670 @@ window.addEventListener('load', function() {
   if (window.frameElement) window.frameElement.style.height = h + 'px';
 });
 </script>
-""", height=580, scrolling=False)
+""", height=440, scrolling=False)
 
+    st.markdown("<style>iframe[title='streamlit_components.v1.html'] { margin-bottom: -2rem !important; display: block; } .element-container:has(iframe) { margin-bottom: 0 !important; padding-bottom: 0 !important; } </style>", unsafe_allow_html=True)
 
-    # ── Footer: inline at the bottom of page content ──────────────────────
-    st.markdown("""
-    <div class="burdy-footer-wrap">
-      <div class="burdy-footer">
-        <span class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</span>
-        <div class="footer-badges">
-          <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" class="footer-badge">Ticketmaster.co.uk</a>
-          <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Skiddle.com</a>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Github.com</a>
-          <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Supabase.com</a>
-          <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" class="footer-badge">PostCodes.io</a>
-          <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" class="footer-badge">Streamlit.io</a>
-          <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Mapbox.com</a>
+    # =====================================================
+    # TRANSIENT TRADE HERO
+    # =====================================================
+
+    components.html("""
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { background: transparent; width: 100%; overflow: hidden; }
+    </style>
+    <script>
+      window.addEventListener('load', function() {
+        try {
+          var el = window.frameElement;
+          if (!el) return;
+          var wrapper = el.closest('[data-testid="stCustomComponentV1"]') || el.parentElement;
+          if (!wrapper) return;
+          var rect = wrapper.getBoundingClientRect();
+          var offsetLeft  = rect.left;
+          var offsetRight = window.parent.innerWidth - rect.right;
+          wrapper.style.marginLeft  = '-' + offsetLeft  + 'px';
+          wrapper.style.marginRight = '-' + offsetRight + 'px';
+          wrapper.style.width       = window.parent.innerWidth + 'px';
+          wrapper.style.maxWidth    = 'none';
+          el.style.width            = '100%';
+          el.style.maxWidth         = 'none';
+          el.style.display          = 'block';
+        } catch(e) {}
+      });
+    </script>
+    <style>
+      .hero3 {
+        overflow: hidden;
+        font-family: 'DM Sans', sans-serif;
+        display: flex;
+        align-items: stretch;
+        min-height: 340px;
+        width: 100%;
+        position: relative;
+        background: #F4F5F7;
+      }
+      .img-left3 {
+        flex: 0 0 45%;
+        position: relative;
+        overflow: hidden;
+      }
+      .img-left3 img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center 30%;
+        display: block;
+        animation: kenburns3 16s ease-in-out infinite alternate;
+        transform-origin: center center;
+      }
+      @keyframes kenburns3 {
+        0%   { transform: scale(1) translateX(0) translateY(0); }
+        100% { transform: scale(1.07) translateX(1%) translateY(-1%); }
+      }
+      .img-left3::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(to right,
+          transparent 70%,
+          #F4F5F7 100%);
+      }
+      .text-right3 {
+        flex: 1;
+        background: #F4F5F7;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 52px 56px 52px 48px;
+        position: relative;
+        z-index: 2;
+      }
+      .pill3 {
+        display: none;
+      }
+      .headline3 {
+        font-weight: 800;
+        font-size: 28px;
+        letter-spacing: -.03em;
+        color: #141518;
+        line-height: 1.2;
+        margin-bottom: 16px;
+      }
+      .headline3 em { font-style: italic; color: #179948; }
+      .body3 {
+        font-size: 14px;
+        color: #6B7280;
+        line-height: 1.8;
+        margin-bottom: 28px;
+        max-width: 480px;
+      }
+      .bullets3 {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bullet3 {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 13px;
+        color: #6B7280;
+        line-height: 1.5;
+      }
+      .bullet3-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #179948;
+        flex-shrink: 0;
+        margin-top: 6px;
+      }
+    </style>
+
+    <div class="hero3">
+
+      <div class="img-left3">
+        <img src="https://images.unsplash.com/photo-1653407980547-31786734695b?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="Busy train station terminal" />
+      </div>
+
+      <div class="text-right3">
+        <span class="pill3">Transient Trade</span>
+        <div class="headline3">The crowd doesn't just go<br>to the event — they pass<br><em>right by your door</em></div>
+        <p class="body3">When a stadium sells out or a festival floods the city, thousands of people spill into surrounding streets with time to spend and nowhere specific to be. That unplanned footfall is some of the highest-converting trade a local business will ever see — if they're ready for it.</p>
+        <div class="bullets3">
+          <div class="bullet3"><div class="bullet3-dot"></div><span><strong style="color:#141518;">Cafés &amp; restaurants</strong> near venues see walk-in covers spike up to 3× on event evenings — with no marketing spend.</span></div>
+          <div class="bullet3"><div class="bullet3-dot"></div><span><strong style="color:#141518;">Convenience &amp; off-licence</strong> stores report basket sizes 40% higher when a major event is within 800m.</span></div>
+          <div class="bullet3"><div class="bullet3-dot"></div><span><strong style="color:#141518;">Hotels on transit routes</strong> fill last-minute rooms at premium rates as attendees miss the last train home.</span></div>
         </div>
       </div>
+
     </div>
-    """, unsafe_allow_html=True)
+    """, height=480, scrolling=False)
+
+
+    # =====================================================
+    # COMPARISON
+    # =====================================================
+
+    components.html("""
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+    --orange:#E8520A; --orange-dim:#c94308; --orange-glow:rgba(232,82,10,.12);
+    --green:#179948; --green-glow:rgba(23,153,72,.12);
+    --bg:#F4F5F7; --surface:#FFFFFF; --surface2:#F0F1F4;
+    --border:rgba(0,0,0,.09); --text:#141518; --text-dim:#6B7280; --text-muted:#A0A7B4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);overflow:hidden;}
+
+.compare-section{padding:0 0 32px;}
+.section-label{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;text-align:left;}
+.section-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--text);line-height:1.2;margin-bottom:0;text-align:left;}
+.section-sub{font-size:14px;color:var(--text-dim);line-height:1.7;margin:16px 0 0;text-align:left;max-width:600px;}
+
+.compare-table-wrap{margin-top:32px;overflow-x:auto;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,.07);}
+.compare-table{width:100%;border-collapse:collapse;background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;}
+.compare-table thead tr{background:var(--surface2);}
+.compare-table th{padding:16px 20px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:500;text-align:left;border-bottom:1px solid var(--border);}
+.th-prism{color:var(--orange) !important;position:relative;}
+.th-prism::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--orange),var(--green));}
+.prism-badge{display:inline-block;background:var(--orange-glow);border:1px solid rgba(232,82,10,.3);border-radius:999px;padding:2px 8px;font-size:9px;color:var(--orange);letter-spacing:.1em;margin-left:6px;vertical-align:middle;}
+
+.compare-table tbody tr{border-bottom:1px solid var(--border);transition:background .15s;}
+.compare-table tbody tr:last-child{border-bottom:none;}
+.compare-table tbody tr:hover{background:rgba(232,82,10,.03);}
+.compare-table td{padding:14px 20px;color:var(--text-dim);vertical-align:middle;}
+.compare-table td:first-child{font-weight:500;color:var(--text);font-size:13px;}
+.td-prism{color:var(--text) !important;font-weight:500;background:rgba(232,82,10,.03);}
+
+.check{color:var(--green);font-weight:700;margin-right:4px;}
+.cross{color:#D1433A;font-weight:700;margin-right:4px;}
+.partial{color:#c99a06;}
+</style>
+
+<div class="compare-section">
+  <div>
+    <p class="section-label">Why Burdy</p>
+    <h2 class="section-title">How we compare</h2>
+    <p class="section-sub">Not all event intelligence is equal. Here's how Burdy stacks up against the alternatives.</p>
+  </div>
+  <div class="compare-table-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th style="width:32%;">Feature</th>
+          <th class="th-prism">Burdy <span class="prism-badge">US</span></th>
+          <th style="color:var(--text-muted);">PredictHQ</th>
+          <th style="color:var(--text-muted);">Manual Research</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Global event coverage</td>
+          <td class="td-prism">19M+ events, 180 countries</td>
+          <td>500K+ events</td>
+          <td><span class="cross">✕</span> Not scalable</td>
+        </tr>
+        <tr>
+          <td>Refresh rate</td>
+          <td class="td-prism"><span class="check">✓</span> Every 15 minutes</td>
+          <td><span class="partial">~ Daily</span></td>
+          <td><span class="cross">✕</span> Weekly at best</td>
+        </tr>
+        <tr>
+          <td>AI demand scoring</td>
+          <td class="td-prism"><span class="check">✓</span> 0–100 with confidence band</td>
+          <td><span class="partial">~ Basic ranking</span></td>
+          <td><span class="cross">✕</span> None</td>
+        </tr>
+        <tr>
+          <td>Hyperlocal radius (500m)</td>
+          <td class="td-prism"><span class="check">✓</span> 60+ cities</td>
+          <td><span class="partial">~ City-level only</span></td>
+          <td><span class="cross">✕</span></td>
+        </tr>
+        <tr>
+          <td>Revenue attribution</td>
+          <td class="td-prism"><span class="check">✓</span> Automated, per-event</td>
+          <td><span class="cross">✕</span> Not available</td>
+          <td><span class="cross">✕</span></td>
+        </tr>
+        <tr>
+          <td>Native WFM / RMS connectors</td>
+          <td class="td-prism"><span class="check">✓</span> 150+ integrations</td>
+          <td><span class="partial">~ API only</span></td>
+          <td><span class="cross">✕</span></td>
+        </tr>
+        <tr>
+          <td>Setup time</td>
+          <td class="td-prism">Under 1 afternoon</td>
+          <td>2–4 weeks</td>
+          <td>Ongoing manual effort</td>
+        </tr>
+        <tr>
+          <td>Free trial</td>
+          <td class="td-prism"><span class="check">✓</span> 14 days, no card</td>
+          <td><span class="partial">~ Demo only</span></td>
+          <td>N/A</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+window.addEventListener('load', function() {
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+});
+</script>
+""", height=560, scrolling=False)
+
+    st.markdown("<style>iframe[title='streamlit_components.v1.html'] { margin-bottom: -2rem !important; display: block; } .element-container:has(iframe) { margin-bottom: 0 !important; padding-bottom: 0 !important; } </style>", unsafe_allow_html=True)
+
+    # =====================================================
+    # WEATHER HERO
+    # =====================================================
+
+    components.html("""
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { background: transparent; width: 100%; overflow: hidden; }
+    </style>
+    <script>
+      window.addEventListener('load', function() {
+        try {
+          var el = window.frameElement;
+          if (!el) return;
+          var wrapper = el.closest('[data-testid="stCustomComponentV1"]') || el.parentElement;
+          if (!wrapper) return;
+          var rect = wrapper.getBoundingClientRect();
+          var offsetLeft  = rect.left;
+          var offsetRight = window.parent.innerWidth - rect.right;
+          wrapper.style.marginLeft  = '-' + offsetLeft  + 'px';
+          wrapper.style.marginRight = '-' + offsetRight + 'px';
+          wrapper.style.width       = window.parent.innerWidth + 'px';
+          wrapper.style.maxWidth    = 'none';
+          el.style.width            = '100%';
+          el.style.maxWidth         = 'none';
+          el.style.display          = 'block';
+        } catch(e) {}
+      });
+    </script>
+    <style>
+      .hero4 {
+        overflow: hidden;
+        font-family: 'DM Sans', sans-serif;
+        display: flex;
+        align-items: stretch;
+        min-height: 340px;
+        width: 100%;
+        position: relative;
+        background: #F4F5F7;
+      }
+      .text-left4 {
+        flex: 1;
+        background: #F4F5F7;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 52px 48px 52px 56px;
+        position: relative;
+        z-index: 2;
+      }
+      .img-right4 {
+        flex: 0 0 45%;
+        position: relative;
+        overflow: hidden;
+      }
+      .img-right4 img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center 60%;
+        display: block;
+        animation: kenburns4 16s ease-in-out infinite alternate;
+        transform-origin: center center;
+      }
+      @keyframes kenburns4 {
+        0%   { transform: scale(1) translateX(0) translateY(0); }
+        100% { transform: scale(1.07) translateX(-1%) translateY(1%); }
+      }
+      .img-right4::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(to left,
+          transparent 70%,
+          #F4F5F7 100%);
+      }
+      .headline4 {
+        font-weight: 800;
+        font-size: 28px;
+        letter-spacing: -.03em;
+        color: #141518;
+        line-height: 1.2;
+        margin-bottom: 16px;
+      }
+      .headline4 em { font-style: italic; color: #179948; }
+      .body4 {
+        font-size: 14px;
+        color: #6B7280;
+        line-height: 1.8;
+        margin-bottom: 28px;
+        max-width: 480px;
+      }
+      .bullets4 {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bullet4 {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 13px;
+        color: #6B7280;
+        line-height: 1.5;
+      }
+      .bullet4-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #179948;
+        flex-shrink: 0;
+        margin-top: 6px;
+      }
+    </style>
+
+    <div class="hero4">
+
+      <div class="text-left4">
+        <div class="headline4">Weather changes plans.<br>Is your hospitality<br><em>ready for the shift?</em></div>
+        <p class="body4">A sudden heatwave fills every beer garden and coastal hotel in hours. An unexpected cold snap empties restaurant terraces overnight. Weather doesn't just affect footfall — it reshapes it entirely, and businesses that don't see it coming are left scrambling with the wrong stock, wrong staff, and wrong pricing.</p>
+        <div class="bullets4">
+          <div class="bullet4"><div class="bullet4-dot"></div><span><strong style="color:#141518;">Hotels &amp; holiday lets</strong> see last-minute booking surges of up to 4× when a sunny weekend is forecast — leaving unprepared properties fully booked but underpriced.</span></div>
+          <div class="bullet4"><div class="bullet4-dot"></div><span><strong style="color:#141518;">Pubs &amp; restaurants</strong> with outdoor space report up to 60% higher covers on warm evenings, with no time to call in extra staff.</span></div>
+          <div class="bullet4"><div class="bullet4-dot"></div><span><strong style="color:#141518;">Coastal &amp; leisure venues</strong> face their busiest days with standard rotas — Burdy's weather signals give you 5-day advance notice to plan ahead.</span></div>
+        </div>
+      </div>
+
+      <div class="img-right4">
+        <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0" alt="Busy sunny beach" />
+      </div>
+
+    </div>
+    """, height=480, scrolling=False)
+
+    st.markdown("<style>iframe[title='streamlit_components.v1.html'] { margin-bottom: -2rem !important; display: block; } .element-container:has(iframe) { margin-bottom: 0 !important; padding-bottom: 0 !important; } </style>", unsafe_allow_html=True)
+
+    # =====================================================
+    # PRICING
+    # =====================================================
+
+    components.html("""
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --orange:#E8520A; --orange-dim:#c94308; --orange-glow:rgba(232,82,10,.12);
+    --green:#179948; --green-glow:rgba(23,153,72,.12);
+    --bg:#F4F5F7; --surface:#FFFFFF; --surface2:#F0F1F4;
+    --border:rgba(0,0,0,.09); --text:#141518; --text-dim:#6B7280; --text-muted:#A0A7B4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);overflow:hidden;}
+
+.pricing-section{padding:48px 0 40px;}
+.pricing-inner{max-width:1100px;margin:0 auto;}
+.section-label{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;text-align:center;}
+.section-title{font-family:'DM Sans',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.03em;color:var(--text);line-height:1.2;text-align:center;}
+.section-sub{font-size:14px;color:var(--text-dim);line-height:1.7;margin:16px auto 0;text-align:center;max-width:480px;}
+
+.pricing-toggle{display:flex;align-items:center;justify-content:center;gap:10px;margin:28px 0;font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim);}
+.toggle-pill{width:44px;height:24px;background:var(--orange);border-radius:999px;position:relative;cursor:pointer;transition:background .2s;}
+.toggle-pill::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;}
+.toggle-pill.annual::after{transform:translateX(20px);}
+.savings-tag{background:var(--green-glow);border:1px solid rgba(23,153,72,.25);border-radius:999px;padding:3px 10px;font-family:'DM Mono',monospace;font-size:10px;color:var(--green);letter-spacing:.06em;}
+
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:8px;}
+.price-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 24px;position:relative;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);display:flex;flex-direction:column;}
+.price-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--orange),var(--green),transparent);}
+.price-card.featured{background:var(--surface);border-color:rgba(232,82,10,.35);box-shadow:0 4px 28px rgba(232,82,10,.15);}
+.price-card.featured::before{background:linear-gradient(90deg,var(--orange),var(--green),transparent);}
+.price-popular{display:inline-block;background:var(--orange-glow);border:1px solid rgba(232,82,10,.4);border-radius:999px;padding:3px 12px;font-family:'DM Mono',monospace;font-size:10px;color:var(--orange);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}
+.price-tier{font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px;}
+.price-value{font-family:'DM Sans',sans-serif;font-weight:800;font-size:44px;letter-spacing:-.04em;color:var(--orange);line-height:1;margin-bottom:6px;}
+.price-value sup{font-size:22px;vertical-align:super;line-height:0;}
+.price-per{font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);margin-bottom:16px;}
+.price-desc{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:20px;}
+.price-card.featured .price-desc{color:var(--text-dim);}
+.price-divider{height:1px;background:var(--border);margin-bottom:20px;}
+.price-features{list-style:none;display:flex;flex-direction:column;gap:9px;flex:1;margin-bottom:24px;}
+.price-features li{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);}
+.price-card.featured .price-features li{color:var(--text);}
+.pf-check{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;background:var(--green-glow);color:var(--green);font-size:10px;flex-shrink:0;}
+.btn-plan{display:block;text-align:center;padding:12px;border-radius:8px;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;background:var(--surface2);border:1px solid var(--border);color:var(--text);transition:all .18s;margin-top:auto;}
+.btn-plan:hover{background:var(--orange-glow);border-color:rgba(232,82,10,.3);color:var(--orange);}
+.featured-btn{background:var(--orange);border:none;color:#fff;}
+.featured-btn:hover{background:var(--orange-dim);opacity:1;color:#fff;box-shadow:0 5px 20px rgba(232,82,10,.3);}
+
+@media(max-width:700px){.pricing-grid{grid-template-columns:1fr;}}
+</style>
+
+<div class="pricing-section">
+  <div class="pricing-inner">
+    <div style="text-align:center;max-width:560px;margin:0 auto;">
+      <p class="section-label">Pricing</p>
+      <h2 class="section-title">Simple, transparent<br>pricing</h2>
+      <p class="section-sub">Scale from one location to thousands. Cancel anytime.</p>
+    </div>
+    <div class="pricing-toggle">
+      <span>Monthly</span>
+      <div class="toggle-pill" id="billingToggle" onclick="toggleBilling()" title="Toggle billing period"></div>
+      <span>Annual</span>
+      <span class="savings-tag">Save 20%</span>
+    </div>
+    <div class="pricing-grid">
+
+      <!-- Starter -->
+      <div class="price-card">
+        <div class="price-tier">Starter</div>
+        <div class="price-value" id="p0"><sup>£</sup>149</div>
+        <div class="price-per" id="pp0">per month · 1 location</div>
+        <p class="price-desc">Perfect for independent hotels, restaurants, or single-site retailers getting started with event intelligence.</p>
+        <div class="price-divider"></div>
+        <ul class="price-features">
+          <li><span class="pf-check">✓</span> Up to 1 location</li>
+          <li><span class="pf-check">✓</span> 50,000 events / month</li>
+          <li><span class="pf-check">✓</span> 7-day demand forecasts</li>
+          <li><span class="pf-check">✓</span> REST API access</li>
+          <li><span class="pf-check">✓</span> Email alerts</li>
+          <li><span class="pf-check">✓</span> Community support</li>
+        </ul>
+        <a href="#" class="btn-plan">Start free trial</a>
+      </div>
+
+      <!-- Growth -->
+      <div class="price-card featured">
+        <div class="price-popular">Most popular</div>
+        <div class="price-tier" style="color:#E8520A;">Growth</div>
+        <div class="price-value" id="p1" style="background:linear-gradient(135deg,#E8520A,#179948);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;"><sup style="-webkit-text-fill-color:#E8520A;">£</sup>499</div>
+        <div class="price-per" id="pp1">per month · up to 10 locations</div>
+        <p class="price-desc">For multi-site operators, regional chains, and growing platforms that need depth and scale.</p>
+        <div class="price-divider" style="background:rgba(232,82,10,0.3);"></div>
+        <ul class="price-features">
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Up to 10 locations</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Unlimited events</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> 90-day demand forecasts</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Hyperlocal 500m radius</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Webhook &amp; Slack alerts</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Revenue attribution</li>
+          <li><span class="pf-check" style="background:var(--orange-glow);color:#E8520A;">✓</span> Priority support</li>
+        </ul>
+        <a href="#" class="btn-plan featured-btn">Start free trial</a>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="price-card">
+        <div class="price-tier">Enterprise</div>
+        <div class="price-value">Custom</div>
+        <div class="price-per">tailored to your portfolio</div>
+        <p class="price-desc">For enterprise groups, platforms with API resale, or organisations needing SLAs and custom data pipelines.</p>
+        <div class="price-divider"></div>
+        <ul class="price-features">
+          <li><span class="pf-check">✓</span> Unlimited locations</li>
+          <li><span class="pf-check">✓</span> Dedicated data pipeline</li>
+          <li><span class="pf-check">✓</span> Custom ML models</li>
+          <li><span class="pf-check">✓</span> White-label API option</li>
+          <li><span class="pf-check">✓</span> SSO & SAML</li>
+          <li><span class="pf-check">✓</span> 99.99% SLA</li>
+          <li><span class="pf-check">✓</span> Dedicated CSM</li>
+        </ul>
+        <a href="#" class="btn-plan">Talk to sales</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+var annual = false;
+var prices = [{m:149,a:119},{m:499,a:399}];
+var pers = ['per month · 1 location','per month · up to 10 locations'];
+var persA = ['per month · billed annually','per month · billed annually'];
+function toggleBilling() {
+  annual = !annual;
+  document.getElementById('billingToggle').classList.toggle('annual', annual);
+  [0,1].forEach(function(i) {
+    document.getElementById('p'+i).childNodes[document.getElementById('p'+i).childNodes.length-1].nodeValue = (annual ? prices[i].a : prices[i].m);
+    document.getElementById('pp'+i).textContent = annual ? persA[i] : pers[i];
+  });
+}
+window.addEventListener('load', function() {
+  var h = document.body.scrollHeight;
+  if (window.frameElement) window.frameElement.style.height = h + 'px';
+});
+</script>
+""", height=820, scrolling=False)
+
+
+    # ── Footer: injected into parent DOM like the header ──────────────────
+    components.html("""
+    <script>
+    (function() {
+        var p = window.parent.document;
+
+        if (!p.getElementById('burdy-footer-style')) {
+            var style = p.createElement('style');
+            style.id = 'burdy-footer-style';
+            style.textContent = `
+                @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+                #burdy-footer {
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    z-index: 1000;
+                    background: rgba(244,245,247,0.92);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    padding: 14px 3rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    box-sizing: border-box;
+                    transition: left 0.3s ease;
+                }
+                #burdy-footer::before {
+                    content: '';
+                    position: absolute;
+                    top: 0; left: 0; right: 0;
+                    height: 3px;
+                    background: linear-gradient(90deg, #E8520A, #179948, transparent);
+                }
+                #burdy-footer .footer-copy {
+                    font-family: 'DM Mono', monospace;
+                    font-size: 11px;
+                    color: #A0A7B4;
+                    white-space: nowrap;
+                }
+                #burdy-footer .footer-badges { display: flex; gap: 8px; flex-wrap: nowrap; }
+                #burdy-footer .footer-badge {
+                    font-family: 'DM Mono', monospace;
+                    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+                    padding: 4px 10px;
+                    border: 1px solid rgba(0,0,0,.09);
+                    border-radius: 4px;
+                    color: #A0A7B4;
+                    background: #FFFFFF;
+                    text-decoration: none;
+                    transition: border-color .15s, background .15s;
+                }
+                #burdy-footer .footer-badge:hover {
+                    border-color: #E8520A;
+                    background: rgba(232,82,10,.08);
+                    color: #E8520A;
+                }
+            `;
+            p.head.appendChild(style);
+        }
+
+        if (!p.getElementById('burdy-footer')) {
+            var footer = p.createElement('div');
+            footer.id = 'burdy-footer';
+            footer.innerHTML = `
+                <span class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</span>
+                <div class="footer-badges">
+                    <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" class="footer-badge">Ticketmaster.co.uk</a>
+                    <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Skiddle.com</a>
+                    <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Github.com</a>
+                    <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Supabase.com</a>
+                    <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" class="footer-badge">PostCodes.io</a>
+                    <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" class="footer-badge">Streamlit.io</a>
+                    <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" class="footer-badge">Mapbox.com</a>
+                </div>
+            `;
+            p.body.appendChild(footer);
+        }
+
+        function updateFooterLeft() {
+            var footer = p.getElementById('burdy-footer');
+            if (!footer) return;
+            var sidebar = p.querySelector('[data-testid="stSidebar"]');
+            var sidebarW = sidebar ? sidebar.getBoundingClientRect().width : 0;
+            var toggleBtn = p.querySelector('[data-testid="stSidebarCollapsedControl"]')
+                         || p.querySelector('[data-testid="stSidebarCollapseButton"]');
+            var toggleRight = toggleBtn ? toggleBtn.getBoundingClientRect().right : 0;
+            footer.style.left = Math.max(sidebarW, toggleRight) + 'px';
+        }
+
+        function updateFooterLeft() {
+            var footer = p.getElementById('burdy-footer');
+            if (!footer) return;
+            var sidebar = p.querySelector('[data-testid="stSidebar"]');
+            var sidebarW = sidebar ? sidebar.getBoundingClientRect().width : 0;
+            var toggleBtn = p.querySelector('[data-testid="stSidebarCollapsedControl"]')
+                         || p.querySelector('[data-testid="stSidebarCollapseButton"]');
+            var toggleRight = toggleBtn ? toggleBtn.getBoundingClientRect().right : 0;
+            footer.style.left = Math.max(sidebarW, toggleRight) + 'px';
+        }
+
+        updateFooterLeft();
+        setInterval(updateFooterLeft, 150);
+        try {
+            new MutationObserver(updateFooterLeft).observe(p.body, {
+                attributes: true, subtree: true,
+                attributeFilter: ['style', 'class']
+            });
+        } catch(e) {}
+    })();
+    </script>
+    """, height=0)
