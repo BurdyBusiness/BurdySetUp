@@ -125,7 +125,7 @@ div[data-testid="stSlider"] div[class*="thumbValue"] { color: var(--green) !impo
 div[data-testid="stSlider"] label,
 div[data-testid="stSlider"] label p,
 div[data-testid="stSlider"] label span { color: var(--text-dim) !important; }
-/* Orange buttons — main content only, never in sidebar */
+/* Orange buttons — main content */
 .main .stButton > button,
 section.main .stButton > button,
 [data-testid="stMainBlockContainer"] .stButton > button {
@@ -138,23 +138,39 @@ section.main .stButton > button,
     padding: 10px 22px !important;
     transition: all .2s !important;
     width: 100% !important;
-    background: var(--orange) !important;
+    background: var(--orange, #E8520A) !important;
     color: #fff !important;
     border: none !important;
-    box-shadow: 0 3px 14px var(--orange-glow) !important;
+    box-shadow: 0 3px 14px var(--orange-glow, rgba(232,82,10,.12)) !important;
 }
 .main .stButton > button:hover,
 section.main .stButton > button:hover,
 [data-testid="stMainBlockContainer"] .stButton > button:hover {
-    background: var(--orange-dim) !important;
+    background: var(--orange-dim, #c94308) !important;
     box-shadow: 0 5px 20px rgba(232,82,10,.3) !important;
     transform: translateY(-1px) !important;
 }
 
-/* Sidebar — hide nav buttons but restore collapse/expand toggle */
-[data-testid="stSidebar"] .stButton,
+/* Sidebar buttons — styled, visible, orange */
 [data-testid="stSidebar"] .stButton > button {
-    display: none !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    letter-spacing: .05em !important;
+    text-transform: uppercase !important;
+    border-radius: 8px !important;
+    padding: 9px 18px !important;
+    width: 100% !important;
+    background: #E8520A !important;
+    color: #fff !important;
+    border: none !important;
+    box-shadow: 0 3px 12px rgba(232,82,10,.2) !important;
+    transition: all .2s !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #c94308 !important;
+    box-shadow: 0 5px 18px rgba(232,82,10,.35) !important;
+    transform: translateY(-1px) !important;
 }
 
 /* Native collapse button — visually hidden but kept in DOM so JS can click it */
@@ -347,22 +363,22 @@ a.footer-badge:hover {
 
 /* Sidebar panel background & border */
 [data-testid="stSidebar"] {
-    background: var(--bg) !important;
-    border-right: 1px solid var(--border) !important;
+    background: var(--bg, #F4F5F7) !important;
+    border-right: 1px solid var(--border, rgba(0,0,0,.09)) !important;
     box-shadow: 2px 0 16px rgba(0,0,0,.06) !important;
 }
 [data-testid="stSidebar"] > div:first-child {
-    background: var(--bg) !important;
+    background: var(--bg, #F4F5F7) !important;
     padding-top: 1rem !important;
 }
 
-/* Orange/green accent bar along the top of the sidebar */
+/* Orange/green accent bar along the right edge of the sidebar */
 [data-testid="stSidebar"]::after {
     content: '';
     position: absolute;
     top: 0; right: 0; bottom: 0;
     width: 3px;
-    background: linear-gradient(180deg, var(--orange), var(--green), transparent);
+    background: linear-gradient(180deg, #E8520A, #179948, transparent);
     z-index: 10;
 }
 
@@ -375,19 +391,19 @@ a.footer-badge:hover {
     font-size: 11px !important;
     font-weight: 700 !important;
     letter-spacing: -.01em !important;
-    color: var(--text-dim) !important;
+    color: var(--text-dim, #6B7280) !important;
     transition: background .15s, color .15s !important;
     border: 1px solid transparent !important;
 }
 [data-testid="stSidebarNavLink"]:hover {
-    background: var(--orange-glow) !important;
-    color: var(--orange) !important;
+    background: var(--orange-glow, rgba(232,82,10,.12)) !important;
+    color: #E8520A !important;
     border-color: rgba(232,82,10,.2) !important;
 }
 [data-testid="stSidebarNavLink"][aria-current="page"],
 [data-testid="stSidebarNavLink"].active {
-    background: var(--orange-glow) !important;
-    color: var(--orange) !important;
+    background: var(--orange-glow, rgba(232,82,10,.12)) !important;
+    color: #E8520A !important;
     border-color: rgba(232,82,10,.25) !important;
     font-weight: 600 !important;
 }
@@ -406,7 +422,7 @@ a.footer-badge:hover {
     font-size: 13px !important;
     letter-spacing: .08em !important;
     text-transform: uppercase !important;
-    color: var(--text-muted) !important;
+    color: var(--text-muted, #A0A7B4) !important;
     margin: 20px 0 8px !important;
 }
 
@@ -415,35 +431,34 @@ a.footer-badge:hover {
 [data-testid="stSidebar"] label {
     font-family: 'DM Sans', sans-serif !important;
     font-size: 13px !important;
-    color: var(--text-dim) !important;
+    color: var(--text-dim, #6B7280) !important;
 }
 
 /* Inputs inside sidebar */
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] [data-baseweb="select"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
+    background: var(--surface, #FFFFFF) !important;
+    border: 1px solid var(--border, rgba(0,0,0,.09)) !important;
     border-radius: 8px !important;
     font-family: 'DM Mono', monospace !important;
     font-size: 12px !important;
-    color: var(--text) !important;
+    color: var(--text, #141518) !important;
 }
 [data-testid="stSidebar"] input:focus {
-    border-color: var(--orange) !important;
-    box-shadow: 0 0 0 3px var(--orange-glow) !important;
+    border-color: #E8520A !important;
+    box-shadow: 0 0 0 3px rgba(232,82,10,.12) !important;
 }
 
-/* Buttons inside sidebar */
 /* Dividers inside sidebar */
 [data-testid="stSidebar"] hr {
-    border-top: 1px solid var(--border) !important;
+    border-top: 1px solid var(--border, rgba(0,0,0,.09)) !important;
     margin: 16px 0 !important;
 }
 
 /* Scrollbar inside sidebar */
 [data-testid="stSidebar"] ::-webkit-scrollbar { width: 4px; }
-[data-testid="stSidebar"] ::-webkit-scrollbar-track { background: var(--bg); }
-[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+[data-testid="stSidebar"] ::-webkit-scrollbar-track { background: #F4F5F7; }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.09); border-radius: 2px; }
 
 
 @media (max-width: 768px) {
@@ -489,7 +504,7 @@ a.footer-badge:hover {
     div[data-testid="stHorizontalBlock"] {
         flex-direction: column !important;
     }
-
+}
 
 </style>
 """, unsafe_allow_html=True)
@@ -2307,17 +2322,6 @@ window.addEventListener('load', function() {
                 </div>
             `;
             p.body.appendChild(footer);
-        }
-
-        function updateFooterLeft() {
-            var footer = p.getElementById('burdy-footer');
-            if (!footer) return;
-            var sidebar = p.querySelector('[data-testid="stSidebar"]');
-            var sidebarW = sidebar ? sidebar.getBoundingClientRect().width : 0;
-            var toggleBtn = p.querySelector('[data-testid="stSidebarCollapsedControl"]')
-                         || p.querySelector('[data-testid="stSidebarCollapseButton"]');
-            var toggleRight = toggleBtn ? toggleBtn.getBoundingClientRect().right : 0;
-            footer.style.left = Math.max(sidebarW, toggleRight) + 'px';
         }
 
         function updateFooterLeft() {

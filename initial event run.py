@@ -115,6 +115,10 @@ div[data-testid="stTextInput"] input:focus {
     border-color: var(--orange) !important;
     box-shadow: 0 0 0 3px var(--orange-glow) !important;
 }
+div[data-testid="stTextInput"] small,
+div[data-testid="stTextInput"] [data-testid="InputInstructions"] {
+    display: none !important;
+}
 div[data-testid="stTextInput"] label,
 div[data-testid="stSlider"] label,
 .stSlider label {
@@ -386,6 +390,229 @@ a.footer-badge:hover {
 </style>
 """, unsafe_allow_html=True)
 
+import streamlit as st
+import streamlit.components.v1 as components
+
+# =====================================================
+# SIDEBAR — paste this entire block into any associated
+# page, directly after st.set_page_config()
+# =====================================================
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+:root {
+    --orange:      #E8520A;
+    --orange-dim:  #c94308;
+    --orange-glow: rgba(232,82,10,.12);
+    --green:       #179948;
+    --green-dim:   #0f7035;
+    --green-glow:  rgba(23,153,72,.12);
+    --bg:          #F4F5F7;
+    --surface:     #FFFFFF;
+    --surface2:    #F0F1F4;
+    --border:      rgba(0,0,0,.09);
+    --text:        #141518;
+    --text-dim:    #6B7280;
+    --text-muted:  #A0A7B4;
+}
+
+/* ── Sidebar panel ── */
+[data-testid="stSidebar"] {
+    background: var(--bg) !important;
+    border-right: 1px solid var(--border) !important;
+    box-shadow: 2px 0 16px rgba(0,0,0,.06) !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: var(--bg) !important;
+    padding-top: 1rem !important;
+}
+
+/* Orange → green accent bar along right edge */
+[data-testid="stSidebar"]::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, var(--orange), var(--green), transparent);
+    z-index: 10;
+}
+
+/* ── Nav links ── */
+[data-testid="stSidebarNavLink"] {
+    border-radius: 8px !important;
+    margin: 0 6px !important;
+    padding: 0 10px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: -.01em !important;
+    color: var(--text-dim) !important;
+    transition: background .15s, color .15s !important;
+    border: 1px solid transparent !important;
+}
+[data-testid="stSidebarNavLink"]:hover {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.2) !important;
+}
+[data-testid="stSidebarNavLink"][aria-current="page"],
+[data-testid="stSidebarNavLink"].active {
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border-color: rgba(232,82,10,.25) !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSidebarNavLink"] svg { color: inherit !important; }
+
+/* ── Headings ── */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+    color: var(--text-muted) !important;
+    margin: 20px 0 8px !important;
+}
+
+/* ── Body text & labels ── */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 13px !important;
+    color: var(--text-dim) !important;
+}
+
+/* ── Inputs & selects ── */
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] [data-baseweb="select"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 12px !important;
+    color: var(--text) !important;
+}
+[data-testid="stSidebar"] input:focus {
+    border-color: var(--orange) !important;
+    box-shadow: 0 0 0 3px var(--orange-glow) !important;
+}
+
+/* ── Hide stButtons inside sidebar ── */
+[data-testid="stSidebar"] .stButton,
+[data-testid="stSidebar"] .stButton > button {
+    display: none !important;
+}
+
+/* ── Dividers ── */
+[data-testid="stSidebar"] hr {
+    border-top: 1px solid var(--border) !important;
+    margin: 16px 0 !important;
+}
+
+/* ── Scrollbar ── */
+[data-testid="stSidebar"] ::-webkit-scrollbar { width: 4px; }
+[data-testid="stSidebar"] ::-webkit-scrollbar-track { background: var(--bg); }
+[data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Native collapse button: hidden visually but NOT display:none
+      so it stays in the DOM and JS can click it ── */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"] {
+    position: fixed !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    z-index: -1 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Custom ‹ / › toggle ────────────────────────────────────────────────────
+# Injects a slim tab that floats at the sidebar edge and clicks Streamlit's
+# native (but visually hidden) collapse button.
+# NOTE: the native button must NOT be display:none — see CSS above.
+components.html("""
+<script>
+(function() {
+    var p = window.parent.document;
+
+    function ensureToggle() {
+        var existing = p.getElementById('burdy-sidebar-toggle');
+        if (existing) return existing;
+
+        var toggle = p.createElement('button');
+        toggle.id = 'burdy-sidebar-toggle';
+        toggle.setAttribute('aria-label', 'Toggle sidebar');
+
+        toggle.style.position       = 'fixed';
+        toggle.style.top            = '50%';
+        toggle.style.transform      = 'translateY(-50%)';
+        toggle.style.zIndex         = '99999';
+        toggle.style.width          = '20px';
+        toggle.style.height         = '56px';
+        toggle.style.background     = '#FFFFFF';
+        toggle.style.border         = '1px solid rgba(0,0,0,0.12)';
+        toggle.style.borderLeft     = '0';
+        toggle.style.borderRadius   = '0 6px 6px 0';
+        toggle.style.cursor         = 'pointer';
+        toggle.style.boxShadow      = '2px 0 8px rgba(0,0,0,0.10)';
+        toggle.style.display        = 'flex';
+        toggle.style.alignItems     = 'center';
+        toggle.style.justifyContent = 'center';
+        toggle.style.padding        = '0';
+        toggle.style.fontSize       = '12px';
+        toggle.style.color          = '#6B7280';
+        toggle.style.lineHeight     = '1';
+
+        toggle.onmouseenter = function() {
+            this.style.color       = '#E8520A';
+            this.style.borderColor = 'rgba(232,82,10,0.4)';
+        };
+        toggle.onmouseleave = function() {
+            this.style.color       = '#6B7280';
+            this.style.borderColor = 'rgba(0,0,0,0.12)';
+        };
+
+        toggle.onclick = function() {
+            var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
+                     || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                     || p.querySelector('[data-testid="stSidebarCollapseButton"]')
+                     || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
+            if (stBtn) stBtn.click();
+        };
+
+        p.body.appendChild(toggle);
+        return toggle;
+    }
+
+    function positionToggle() {
+        var toggle = ensureToggle();
+        var sidebar = p.querySelector('[data-testid="stSidebar"]');
+        var sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : 0;
+        var isCollapsed = sidebarRight < 10;
+        toggle.style.left = (isCollapsed ? 0 : sidebarRight) + 'px';
+        toggle.innerHTML  = isCollapsed ? '&#10095;' : '&#10094;';
+    }
+
+    positionToggle();
+    setInterval(positionToggle, 100);
+    try {
+        new MutationObserver(positionToggle).observe(p.body, {
+            attributes: true, subtree: true,
+            attributeFilter: ['style', 'class']
+        });
+    } catch(e) {}
+})();
+</script>
+""", height=1)
+
 # =====================================================
 # CONFIG
 # =====================================================
@@ -395,7 +622,7 @@ SKIDDLE_API_KEY      = st.secrets["SKIDDLE_API_KEY"]
 SUPABASE_URL         = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY         = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 BIRD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Bird%20Logo%20Left.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0JpcmQgTG9nbyBMZWZ0LnBuZyIsImlhdCI6MTc4MDU5ODM2NSwiZXhwIjoxODEyMTM0MzY1fQ.OMa5cbOtPSUZR4JTjlT3Mm1XBZlgi2rugZOQx7SLCX0"
-WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Font%20logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0ZvbnQgbG9nby5wbmciLCJpYXQiOjE3ODA2ODA3OTYsImV4cCI6MjA5NjA0MDc5Nn0.yI5FtOyAlXnLpf1Nbu4SFFUmVt9i4eSKQ17UTwRjHdE"
+WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Font%20logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0ZvbnQgbG9nby5wbmciLCJpYXQiOjE3ODA1OTg0MTEsImV4cCI6MTgxMjEzNDQxMX0.pt-zS-TT80l_mp-_jGklDgtx8K2wc0uafgW36VDklbo"
 
 TM_BASE_URL      = "https://app.ticketmaster.com/discovery/v2/events.json"
 SKIDDLE_URL      = "https://www.skiddle.com/api/v1/events/search/"
@@ -454,23 +681,6 @@ st.markdown(f"""
     background: linear-gradient(90deg, var(--orange), var(--green), transparent);
 }}
 .block-container {{ padding-top: 100px !important; }}
-.burdy-logo {{ display: flex; align-items: center; gap: 12px; }}
-.live-badge {{
-    display: flex; align-items: center; gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px; padding: 7px 16px;
-    font-family: 'DM Mono', monospace;
-    font-size: 11px; color: var(--text-dim);
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    flex-shrink: 0;
-}}
-.live-dot {{
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-    display: inline-block;
-}}
 .ticker-wrap {{ overflow: hidden; flex: 1; margin: 0 40px; }}
 .ticker-track {{
     display: flex;
@@ -490,10 +700,11 @@ st.markdown(f"""
     100% {{ transform: translateX(-50%); }}
 }}
 </style>
+
 <div class="burdy-header">
   <div class="burdy-logo">
-    <img src="{BIRD_LOGO_URL}" style="display:block;height:clamp(40px,8vw,80px);" />
-    <img src="{WORD_LOGO_URL}" style="display:block;height:clamp(60px,12vw,150px);" />
+    <img src="{BIRD_LOGO_URL}" height="80" style="display:block;" />
+    <img src="{WORD_LOGO_URL}" height="150" style="display:block;" />
   </div>
   <div class="ticker-wrap">
     <div class="ticker-track">
@@ -515,54 +726,6 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ── Footer slot: rendered early so it's always in the DOM ──
-_badge_style = (
-    "font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;"
-    "text-transform:uppercase;padding:4px 10px;"
-    "border:1px solid rgba(0,0,0,.09);border-radius:4px;"
-    "color:#A0A7B4;background:#FFFFFF;text-decoration:none;"
-    "display:inline-block;"
-)
-_footer_html = f"""
-<div style="
-    position:fixed;
-    bottom:0;left:0;right:0;
-    z-index:998;
-    background:rgba(244,245,247,0.92);
-    backdrop-filter:blur(8px);
-    -webkit-backdrop-filter:blur(8px);
-    overflow:hidden;
-">
-  <div style="
-      position:absolute;top:0;left:0;right:0;height:3px;
-      background:linear-gradient(90deg,#E8520A,#179948,transparent);
-  "></div>
-  <div style="
-      padding:14px 3rem;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      flex-wrap:nowrap;
-      gap:12px;
-  ">
-    <div style="font-family:'DM Mono',monospace;font-size:11px;color:#A0A7B4;white-space:nowrap;">
-      © 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:nowrap;">
-      <a href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Ticketmaster.co.uk</a>
-      <a href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Skiddle.com</a>
-      <a href="https://github.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Github.com</a>
-      <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Supabase.com</a>
-      <a href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">PostCodes.io</a>
-      <a href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Streamlit.io</a>
-      <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="{_badge_style}">Mapbox.com</a>
-    </div>
-  </div>
-</div>
-"""
-footer_slot = st.empty()
-footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 
 # =====================================================
 # CONTROL CARD
@@ -799,7 +962,7 @@ components.html("""
 </div>
 """, height=520, scrolling=False)
 
-col1, col2, col3 = st.columns([1, 4, 1])
+col1, col2, col3, col4 = st.columns([2, 4, 1, 1])
 
 with col1:
     postcode = st.text_input("Enter postcode")
@@ -807,7 +970,10 @@ with col2:
     radius = st.slider("Search radius (miles)", 1, 100, 10)
 with col3:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    find_events = st.button("Find events", use_container_width=True)
+    search_db = st.button("Search", use_container_width=True)
+with col4:
+    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    find_events = st.button("Fetch & Sync", use_container_width=True)
 
 # ── Stat boxes: always visible, updated progressively during fetch ──
 def _stat_row(tm, sk, new_events, nearby, total, radius_label):
@@ -842,7 +1008,24 @@ except Exception:
     _initial_total = "—"
 stats_slot.markdown(_stat_row("—", "—", "—", "—", _initial_total, radius), unsafe_allow_html=True)
 
-
+# Reserve the footer slot immediately so it is always in the DOM,
+# even while the fetch progress bar is updating.
+_footer_html = """
+<div class="burdy-footer">
+  <div class="footer-copy">© 2026 Burdy Business · Powered by blood, sweat and tears from Trish Burley and Cara Moody</div>
+  <div class="footer-badges">
+    <a class="footer-badge" href="https://ticketmaster.co.uk" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Ticketmaster.co.uk</a>
+    <a class="footer-badge" href="https://www.skiddle.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Skiddle.com</a>
+    <a class="footer-badge" href="https://github.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Github.com</a>
+    <a class="footer-badge" href="https://supabase.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Supabase.com</a>
+    <a class="footer-badge" href="https://postcodes.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">PostCodes.io</a>
+    <a class="footer-badge" href="https://streamlit.io" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Streamlit.io</a>
+    <a class="footer-badge" href="https://mapbox.com" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Mapbox.com</a>
+  </div>
+</div>
+"""
+footer_slot = st.empty()
+footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 
 
 # =====================================================
@@ -902,50 +1085,64 @@ def upsert_batch(events_dict, strip_keys=None):
 
 
 def render_rows(data_df):
+    cols = list(data_df.columns)
+
+    # Find the actual column names regardless of casing
+    col_lower = {c.lower(): c for c in cols}
+    name_col  = col_lower.get("name")
+    url_col   = col_lower.get("url")
+
+    # Display all columns except the url column
+    display_cols = [c for c in cols if c != url_col]
+
     headers = "".join(
         f"<th style='padding:10px 14px;text-align:left;font-family:DM Mono,monospace;"
         f"font-size:11px;color:#6B7280;letter-spacing:.08em;text-transform:uppercase;"
         f"border-bottom:1px solid rgba(0,0,0,.09);background:#fff;white-space:nowrap;'>{col}</th>"
-        for col in data_df.columns
+        for col in display_cols
     )
-    rows = "".join(
-        "<tr>" + "".join(
-            f"<td style='padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
-            f"font-size:13px;font-family:DM Sans,sans-serif;color:#141518;"
-            f"background:#fff;white-space:nowrap;'>{val}</td>"
-            for val in row
-        ) + "</tr>"
-        for row in data_df.itertuples(index=False)
-    )
+    rows_html = []
+    for _, row in data_df.iterrows():
+        cells = []
+        for col in display_cols:
+            val = row[col] if pd.notna(row[col]) else ""
+            if col == name_col and url_col:
+                url_val = row.get(url_col, "")
+                if pd.notna(url_val) and str(url_val).startswith("http"):
+                    cell = (
+                        f"<td style='padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                        f"font-size:13px;font-family:DM Sans,sans-serif;background:#fff;white-space:nowrap;'>"
+                        f"<a href='{url_val}' target='_blank' rel='noopener noreferrer' "
+                        f"style='color:#E8520A;text-decoration:none;font-weight:500;'>{val}</a></td>"
+                    )
+                else:
+                    cell = (
+                        f"<td style='padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                        f"font-size:13px;font-family:DM Sans,sans-serif;color:#141518;"
+                        f"background:#fff;white-space:nowrap;'>{val}</td>"
+                    )
+            else:
+                cell = (
+                    f"<td style='padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                    f"font-size:13px;font-family:DM Sans,sans-serif;color:#141518;"
+                    f"background:#fff;white-space:nowrap;'>{val}</td>"
+                )
+            cells.append(cell)
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+    rows = "".join(rows_html)
     return f"<thead><tr>{headers}</tr></thead><tbody>{rows}</tbody>"
 
 
-def render_table(df):
-    visible_df    = df.head(3)
-    blurred_df    = df.iloc[3:13]
-    visible_html  = render_rows(visible_df)
-    blurred_html  = render_rows(blurred_df) if len(df) > 3 else ""
-    visible_height = 44 + (len(visible_df) * 44)
-    blurred_height = 44 + (len(blurred_df) * 44) if len(df) > 3 else 0
-    total_height   = visible_height + min(blurred_height, 320) + 100
+def render_table(df, page=1, per_page=25):
+    total        = len(df)
+    total_pages  = max(1, -(-total // per_page))
+    page         = max(1, min(page, total_pages))
+    start        = (page - 1) * per_page
+    page_df      = df.iloc[start : start + per_page]
 
-    blur_block = f"""
-  <div class="blur-section">
-    <div class="blur-inner"><table>{blurred_html}</table></div>
-    <div class="overlay">
-      <div class="card">
-        <div class="card-top"></div>
-        <div class="lock">🔒</div>
-        <div class="title">Unlock Full Results</div>
-        <div class="body">You're viewing a preview of 3 results.<br>
-          Log in or contact Burdy Business to unlock all events in your area.</div>
-        <div style="display:flex;gap:10px;justify-content:center;margin-top:4px;">
-          <a class="btn-primary" href="/login">Log In</a>
-          <a class="btn-secondary" href="mailto:hello@burdy.com">Contact Us</a>
-        </div>
-      </div>
-    </div>
-  </div>""" if len(df) > 3 else ""
+    page_html    = render_rows(page_df)
+    row_height   = 44
+    total_height = 44 + (len(page_df) * row_height) + 40
 
     html = f"""<!DOCTYPE html><html><head>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
@@ -953,24 +1150,13 @@ def render_table(df):
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 table {{ width:100%; border-collapse:collapse; background:#fff; }}
-.visible-wrap {{ border-radius:{'14px 14px 0 0' if len(df) > 3 else '14px'}; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
-.blur-section {{ position:relative; border-radius:0 0 14px 14px; overflow:hidden; }}
-.blur-inner {{ filter:blur(5px); pointer-events:none; user-select:none; opacity:0.6; }}
-.overlay {{ position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center;
-  background:linear-gradient(to bottom,rgba(244,245,247,0) 0%,rgba(244,245,247,0.85) 30%,rgba(244,245,247,0.85) 100%); z-index:10; }}
-.card {{ background:#fff; border:1px solid rgba(0,0,0,.09); border-radius:16px; padding:28px 32px; max-width:400px; width:90%; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,.1); position:relative; overflow:hidden; }}
-.card-top {{ position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#E8520A,#179948,transparent); }}
-.lock {{ font-size:32px; margin-bottom:12px; }}
-.title {{ font-family:'Syne',sans-serif; font-weight:800; font-size:20px; letter-spacing:-.02em; color:#141518; margin-bottom:10px; }}
-.body {{ font-size:13px; color:#6B7280; line-height:1.6; margin-bottom:20px; }}
-.btn-primary {{ display:inline-block; background:#E8520A; color:#fff; font-family:'DM Sans',sans-serif; font-weight:600; font-size:12px; padding:10px 24px; border-radius:8px; text-decoration:none; box-shadow:0 3px 14px rgba(232,82,10,.25); }}
-.btn-secondary {{ display:inline-block; background:transparent; color:#E8520A; font-family:'DM Sans',sans-serif; font-weight:600; font-size:12px; padding:10px 24px; border-radius:8px; text-decoration:none; border:1px solid #E8520A; }}
+.table-wrap {{ border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
 </style></head><body>
-  <div class="visible-wrap"><table>{visible_html}</table></div>
-  {blur_block}
+  <div class="table-wrap"><table>{page_html}</table></div>
 </body></html>"""
 
     components.html(html, height=total_height, scrolling=False)
+    return total_pages, page
 
 
 # =====================================================
@@ -1137,6 +1323,25 @@ def fetch_skiddle(lat, lon, radius, status, progress):
     return events
 
 
+# ── Helper: paginate an RPC call that returns rows ──
+def rpc_fetch_all(fn_name: str, params: dict, page_size: int = 1000) -> list:
+    """Call a Supabase RPC function repeatedly with .range() until all rows are
+    returned, bypassing the default 1 000-row cap."""
+    all_rows = []
+    offset = 0
+    while True:
+        resp = (
+            supabase.rpc(fn_name, params)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break          # last (or only) page
+        offset += page_size
+    return all_rows
+
 # =====================================================
 # FIND & SYNC ALL EVENTS
 # =====================================================
@@ -1187,17 +1392,26 @@ if find_events:
         after_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
         after_radius_count = supabase.rpc(
             "count_within_radius",
-            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
+            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
+             "now_utc": datetime.now(timezone.utc).isoformat()}
         ).execute().data
-        after_radius_resp = supabase.rpc(
+        after_radius_rows = rpc_fetch_all(
             "search_within_radius",
-            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
-        ).execute()
+            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
+             "now_utc": datetime.now(timezone.utc).isoformat(),
+             "type_filters": [], "venue_filters": []}
+        )
 
-        st.session_state["search_df"]    = pd.DataFrame(after_radius_resp.data or [])
+        st.session_state["search_df"]    = pd.DataFrame(after_radius_rows)
+        st.session_state["filtered_df"]  = st.session_state["search_df"]
         st.session_state["search_label"] = (
             f"{after_radius_count} events within {radius} miles of {postcode.upper()}"
         )
+        st.session_state["page_num"]       = 1
+        st.session_state["_search_lat"]    = lat
+        st.session_state["_search_lon"]    = lon
+        st.session_state["_search_radius"] = radius
+        st.session_state["_last_filter_key"] = "|"
 
         status.empty()
         progress.empty()
@@ -1208,29 +1422,138 @@ if find_events:
             unsafe_allow_html=True
         )
 
-
 # =====================================================
 # SEARCH VIEW
 # =====================================================
 
-if postcode and not find_events:
-    lat, lon = get_location(postcode)
-    if lat is not None:
-        resp = supabase.rpc(
-            "search_within_radius",
-            {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34}
-        ).execute()
-        st.session_state["search_df"]    = pd.DataFrame(resp.data or [])
-        st.session_state["search_label"] = (
-            f"{len(st.session_state['search_df'])} events within "
-            f"{radius} miles of {postcode.upper()}"
-        )
+if search_db:
+    if not postcode:
+        st.warning("Enter a postcode first")
+    else:
+        lat, lon = get_location(postcode)
+        if lat is None:
+            st.error("Invalid postcode")
+        else:
+            rows = rpc_fetch_all(
+                "search_within_radius",
+                {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
+                 "now_utc": datetime.now(timezone.utc).isoformat(),
+                 "type_filters": [], "venue_filters": []}
+            )
+            st.session_state["search_df"]        = pd.DataFrame(rows)
+            st.session_state["filtered_df"]       = st.session_state["search_df"]
+            st.session_state["search_label"]      = (
+                f"{len(st.session_state['search_df'])} events within "
+                f"{radius} miles of {postcode.upper()}"
+            )
+            st.session_state["page_num"]          = 1
+            st.session_state["_search_lat"]       = lat
+            st.session_state["_search_lon"]       = lon
+            st.session_state["_search_radius"]    = radius
+            st.session_state["_last_search_key"]  = f"{postcode}|{radius}"
+            st.session_state["_last_filter_key"]  = "|"
 
 df    = st.session_state.get("search_df", pd.DataFrame())
 label = st.session_state.get("search_label", "")
 
+# ── Helper: run a filtered Supabase query ──
+def run_filtered_query(lat, lon, radius, type_filters=None, venue_filters=None):
+    params = {
+        "lat":           lat,
+        "lng":           lon,
+        "radius_meters": radius * 1609.34,
+        "now_utc":       datetime.now(timezone.utc).isoformat(),
+        "type_filters":  type_filters or [],
+        "venue_filters": venue_filters or [],
+    }
+    rows = rpc_fetch_all("search_within_radius", params)
+    return pd.DataFrame(rows)
+
 if not df.empty:
     st.divider()
     st.subheader(label)
-    st.caption(f"{len(df)} events found — showing preview")
-    render_table(df)
+
+    # ── Filters ──
+    col_lower = {c.lower(): c for c in df.columns}
+    type_col  = col_lower.get("type")
+    venue_col = col_lower.get("venue_name")
+
+    filter_l, filter_r = st.columns(2)
+
+    with filter_l:
+        if type_col:
+            type_options   = sorted(df[type_col].dropna().unique().tolist())
+            selected_types = st.multiselect("Filter by Event Type", options=type_options,
+                                            placeholder="All types")
+        else:
+            selected_types = []
+
+    with filter_r:
+        if venue_col:
+            venue_options   = sorted(df[venue_col].dropna().unique().tolist())
+            selected_venues = st.multiselect("Filter by Venue", options=venue_options,
+                                             placeholder="All venues")
+        else:
+            selected_venues = []
+
+    # Re-query Supabase when filters change
+    _filter_key = f"{','.join(sorted(selected_types))}|{','.join(sorted(selected_venues))}"
+    if _filter_key != st.session_state.get("_last_filter_key"):
+        st.session_state["_last_filter_key"] = _filter_key
+        st.session_state["page_num"] = 1
+        _lat = st.session_state.get("_search_lat")
+        _lon = st.session_state.get("_search_lon")
+        _rad = st.session_state.get("_search_radius")
+        if _lat and _lon and _rad:
+            st.session_state["filtered_df"] = run_filtered_query(
+                _lat, _lon, _rad,
+                selected_types or [],
+                selected_venues or [],
+            )
+
+    filtered_df = st.session_state.get("filtered_df", df)
+
+    # ── Pagination controls ──
+    if "page_num" not in st.session_state:
+        st.session_state["page_num"] = 1
+    if "rows_per_page" not in st.session_state:
+        st.session_state["rows_per_page"] = 25
+
+    per_page    = st.session_state["rows_per_page"]
+    total_pages = max(1, -(-len(filtered_df) // per_page))
+    page_num    = max(1, min(st.session_state["page_num"], total_pages))
+
+    ctrl_left, ctrl_mid, ctrl_right = st.columns([2, 6, 2])
+
+    with ctrl_left:
+        options = [10, 25, 50, 100]
+        new_per = st.selectbox("Rows per page", options=options,
+                               index=options.index(per_page))
+        if new_per != per_page:
+            st.session_state["rows_per_page"] = new_per
+            st.session_state["page_num"]      = 1
+            st.rerun()
+
+    with ctrl_mid:
+        total_label = f"{len(filtered_df)} events" if len(filtered_df) == len(df) else f"{len(filtered_df)} filtered results"
+        st.markdown(
+            f"<div style='text-align:center;font-family:DM Mono,monospace;font-size:12px;"
+            f"color:#6B7280;padding-top:28px;'>"
+            f"Page {page_num} of {total_pages} &nbsp;·&nbsp; {total_label}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    with ctrl_right:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        nav_l, nav_r = st.columns(2)
+        with nav_l:
+            if st.button("‹ Prev", disabled=(page_num <= 1), use_container_width=True):
+                st.session_state["page_num"] = page_num - 1
+                st.rerun()
+        with nav_r:
+            if st.button("Next ›", disabled=(page_num >= total_pages), use_container_width=True):
+                st.session_state["page_num"] = page_num + 1
+                st.rerun()
+
+    render_table(filtered_df, page=st.session_state["page_num"], per_page=per_page)
