@@ -965,7 +965,7 @@ components.html("""
 col1, col2, col3, col4 = st.columns([2, 4, 1, 1])
 
 with col1:
-    postcode = st.text_input("Enter postcode")
+    postcode = st.text_input("Enter postcode", placeholder="e.g. B2 5RE")
 with col2:
     radius = st.slider("Search radius (miles)", 1, 100, 10)
 with col3:
@@ -974,6 +974,123 @@ with col3:
 with col4:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     find_events = st.button("Fetch & Sync", use_container_width=True)
+
+# ── Inject location button into the postcode text input via parent DOM ──
+components.html("""
+<script>
+(function() {
+  function inject() {
+    var doc = window.parent.document;
+
+    // Already injected — skip
+    if (doc.getElementById('locate-btn')) return;
+
+    // Find the first text input inside a stTextInput container
+    var wrapper = doc.querySelector('[data-testid="stTextInput"]');
+    if (!wrapper) { setTimeout(inject, 100); return; }
+
+    var inputEl = wrapper.querySelector('input[type="text"]');
+    if (!inputEl) { setTimeout(inject, 100); return; }
+
+    // Style the input container as relative so we can absolutely position the button
+    var inputContainer = inputEl.parentElement;
+    inputContainer.style.position = 'relative';
+
+    // Add right padding to the input so text doesn't go under the button
+    inputEl.style.paddingRight = '130px';
+
+    // Create the button
+    var btn = doc.createElement('button');
+    btn.id = 'locate-btn';
+    btn.type = 'button';
+    btn.innerHTML = '&#128205; Use my location';
+    btn.style.cssText = [
+      'position:absolute',
+      'right:8px',
+      'top:50%',
+      'transform:translateY(-50%)',
+      'font-family:DM Mono,monospace',
+      'font-size:10px',
+      'letter-spacing:.05em',
+      'text-transform:uppercase',
+      'background:transparent',
+      'color:#E8520A',
+      'border:1px solid rgba(232,82,10,.4)',
+      'border-radius:5px',
+      'padding:4px 10px',
+      'cursor:pointer',
+      'white-space:nowrap',
+      'transition:background .2s,border-color .2s',
+      'z-index:10',
+      'line-height:1.4'
+    ].join(';');
+
+    btn.addEventListener('mouseenter', function() {
+      btn.style.background = 'rgba(232,82,10,.08)';
+      btn.style.borderColor = '#E8520A';
+    });
+    btn.addEventListener('mouseleave', function() {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = 'rgba(232,82,10,.4)';
+    });
+
+    btn.addEventListener('click', function() {
+      btn.disabled = true;
+      btn.innerHTML = '&#9203; Locating&hellip;';
+
+      if (!navigator.geolocation) {
+        btn.innerHTML = '&#128205; Use my location';
+        btn.disabled = false;
+        alert('Geolocation is not supported by your browser.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          fetch('https://api.postcodes.io/postcodes?lon=' + pos.coords.longitude + '&lat=' + pos.coords.latitude)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              var pc = data && data.result && data.result[0] && data.result[0].postcode;
+              if (!pc) throw new Error('No postcode found');
+
+              var setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value').set;
+              setter.call(inputEl, pc);
+              inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+              inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+              inputEl.focus();
+              inputEl.dispatchEvent(new Event('blur', { bubbles: true }));
+
+              btn.innerHTML = '&#10003; ' + pc;
+              btn.disabled = false;
+            })
+            .catch(function() {
+              btn.innerHTML = '&#128205; Use my location';
+              btn.disabled = false;
+              alert('Could not find a postcode for your location.');
+            });
+        },
+        function() {
+          btn.innerHTML = '&#128205; Use my location';
+          btn.disabled = false;
+          alert('Location access denied or unavailable.');
+        },
+        { timeout: 10000 }
+      );
+    });
+
+    inputContainer.appendChild(btn);
+  }
+
+  // Wait for DOM to be ready
+  if (window.parent.document.readyState === 'complete') {
+    inject();
+  } else {
+    window.parent.document.addEventListener('DOMContentLoaded', inject);
+    setTimeout(inject, 300);
+  }
+})();
+</script>
+""", height=1, scrolling=False)
 
 # ── Stat boxes: always visible, updated progressively during fetch ──
 def _stat_row(tm, sk, new_events, nearby, total, radius_label):
@@ -988,7 +1105,7 @@ def _stat_row(tm, sk, new_events, nearby, total, radius_label):
     <div class="stat-label">Skiddle Events</div>
   </div>
   <div class="stat-box">
-    <div class="stat-num">{new_events}</div>
+    <div class="stat-num" id="new-events-num">{new_events}</div>
     <div class="stat-label">New Events Added</div>
   </div>
   <div class="stat-box">
@@ -1032,13 +1149,333 @@ footer_slot.markdown(_footer_html, unsafe_allow_html=True)
 # HELPERS
 # =====================================================
 
+def burdy_new_events_modal(events):
+    """Inject a new events modal into the parent DOM, shown when the stat number is clicked."""
+    import json as _json
+    unique = int(time.time() * 1000)
+
+    safe_events = []
+    for e in events:
+        safe_events.append({
+            "name":  e.get("Name") or "Unknown Event",
+            "date":  (e.get("Date") or "")[:10],
+            "venue": e.get("Venue Name") or "—",
+            "type":  e.get("Type") or "—",
+            "url":   e.get("url") or "",
+        })
+    events_json = _json.dumps(safe_events)
+
+    components.html(f"""
+<script>
+(function() {{
+  var _ts = {unique};
+  var doc = window.parent.document;
+  var events = {events_json};
+
+  // Remove any previously injected modal
+  var old = doc.getElementById('burdy-nem');
+  if (old) old.remove();
+  var oldS = doc.getElementById('burdy-nem-style');
+  if (oldS) oldS.remove();
+
+  if (!doc.getElementById('burdy-fonts')) {{
+    var lnk = doc.createElement('link');
+    lnk.id = 'burdy-fonts'; lnk.rel = 'stylesheet';
+    lnk.href = 'https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap';
+    doc.head.appendChild(lnk);
+  }}
+
+  var style = doc.createElement('style');
+  style.id = 'burdy-nem-style';
+  style.textContent = `
+    #burdy-nem {{
+      display:none;position:fixed;inset:0;
+      background:rgba(20,21,24,0.5);
+      backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+      align-items:center;justify-content:center;
+      z-index:999999;
+    }}
+    #burdy-nem.show {{ display:flex;animation:bNemFade .18s ease; }}
+    @keyframes bNemFade {{ from{{opacity:0}} to{{opacity:1}} }}
+    #burdy-nem .box {{
+      background:#fff;border-radius:16px;padding:28px 32px 24px;
+      width:min(720px,92vw);max-height:80vh;
+      position:relative;overflow:hidden;display:flex;flex-direction:column;
+      box-shadow:0 24px 60px rgba(0,0,0,.2),0 4px 16px rgba(0,0,0,.10);
+      animation:bNemUp .2s ease;
+    }}
+    @keyframes bNemUp {{ from{{transform:translateY(16px);opacity:0}} to{{transform:translateY(0);opacity:1}} }}
+    #burdy-nem .box::before {{
+      content:'';position:absolute;top:0;left:0;right:0;height:3px;
+      background:linear-gradient(90deg,#E8520A,#179948,transparent);
+    }}
+    #burdy-nem .hd {{
+      display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;
+    }}
+    #burdy-nem .ttl {{
+      font-family:'Syne',sans-serif;font-weight:800;font-size:16px;
+      letter-spacing:-.02em;color:#141518;
+    }}
+    #burdy-nem .xcl {{
+      background:none;border:none;cursor:pointer;font-size:18px;
+      color:#A0A7B4;padding:4px;transition:color .15s;line-height:1;
+    }}
+    #burdy-nem .xcl:hover {{ color:#141518; }}
+    #burdy-nem .scr {{
+      overflow-y:auto;flex:1;border-radius:8px;
+      border:1px solid rgba(0,0,0,.08);
+    }}
+    #burdy-nem table {{ width:100%;border-collapse:collapse;background:#fff; }}
+    #burdy-nem thead th {{
+      padding:10px 12px;text-align:left;
+      font-family:'DM Mono',monospace;font-size:9px;
+      letter-spacing:.1em;text-transform:uppercase;color:#A0A7B4;
+      background:#F4F5F7;border-bottom:1px solid rgba(0,0,0,.08);
+      position:sticky;top:0;
+    }}
+    #burdy-nem td {{
+      padding:10px 12px;border-bottom:1px solid rgba(0,0,0,.06);
+      font-size:12px;font-family:'DM Sans',sans-serif;color:#141518;
+    }}
+    #burdy-nem td.dc,#burdy-nem td.vc,#burdy-nem td.tc {{ color:#6B7280; }}
+    #burdy-nem td.dc {{ white-space:nowrap; }}
+    #burdy-nem .ft {{ margin-top:16px;text-align:center; }}
+    #burdy-nem .btn {{
+      font-family:'Syne',sans-serif;font-weight:700;font-size:11px;
+      letter-spacing:.08em;text-transform:uppercase;
+      background:#E8520A;color:#fff;border:none;border-radius:8px;
+      padding:10px 28px;cursor:pointer;
+      box-shadow:0 3px 14px rgba(232,82,10,.3);
+      transition:background .2s,transform .15s,box-shadow .2s;
+    }}
+    #burdy-nem .btn:hover {{
+      background:#c94308;transform:translateY(-1px);
+      box-shadow:0 5px 20px rgba(232,82,10,.4);
+    }}
+  `;
+  doc.head.appendChild(style);
+
+  var modal = doc.createElement('div');
+  modal.id = 'burdy-nem';
+  modal.innerHTML =
+    '<div class="box">'
+    + '<div class="hd"><div class="ttl">&#127381; Newest Events Added</div>'
+    + '<button class="xcl" id="burdy-nem-x">&#10005;</button></div>'
+    + '<div class="scr"><table>'
+    + '<thead><tr><th>Event</th><th>Date</th><th>Venue</th><th>Type</th></tr></thead>'
+    + '<tbody id="burdy-nem-tbody"></tbody>'
+    + '</table></div>'
+    + '<div class="ft"><button class="btn" id="burdy-nem-close">Close</button></div>'
+    + '</div>';
+  doc.body.appendChild(modal);
+
+  // Build rows via DOM so special characters can never break the JS
+  var tbody = doc.getElementById('burdy-nem-tbody');
+  events.forEach(function(e) {{
+    var tr = doc.createElement('tr');
+    var tdName = doc.createElement('td');
+    if (e.url) {{
+      var a = doc.createElement('a');
+      a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.style.cssText = 'color:#E8520A;text-decoration:none;font-weight:500;';
+      a.textContent = e.name;
+      tdName.appendChild(a);
+    }} else {{
+      tdName.textContent = e.name;
+    }}
+    var tdDate  = doc.createElement('td'); tdDate.className  = 'dc'; tdDate.textContent  = e.date  || '—';
+    var tdVenue = doc.createElement('td'); tdVenue.className = 'vc'; tdVenue.textContent = e.venue || '—';
+    var tdType  = doc.createElement('td'); tdType.className  = 'tc'; tdType.textContent  = e.type  || '—';
+    tr.appendChild(tdName); tr.appendChild(tdDate); tr.appendChild(tdVenue); tr.appendChild(tdType);
+    tbody.appendChild(tr);
+  }});
+
+  function show() {{ modal.classList.add('show'); }}
+  function dismiss() {{
+    modal.style.opacity = '0';
+    modal.style.transition = 'opacity .15s ease';
+    setTimeout(function() {{ modal.style.opacity=''; modal.style.transition=''; modal.classList.remove('show'); }}, 150);
+  }}
+
+  doc.getElementById('burdy-nem-close').addEventListener('click', dismiss);
+  doc.getElementById('burdy-nem-x').addEventListener('click', dismiss);
+  modal.addEventListener('click', function(e) {{ if (e.target === modal) dismiss(); }});
+  doc.addEventListener('keydown', function handler(e) {{
+    if (e.key === 'Escape') {{ dismiss(); doc.removeEventListener('keydown', handler); }}
+  }});
+
+  // Attach click to the stat number — retry until it appears in the DOM
+  function attachClick() {{
+    var el = doc.getElementById('new-events-num');
+    if (el) {{
+      el.style.cursor = 'pointer';
+      el.onclick = show;
+    }} else {{
+      setTimeout(attachClick, 200);
+    }}
+  }}
+  attachClick();
+}})();
+</script>
+""", height=1, scrolling=False)
+
+
+def burdy_error(message):
+    """Inject a Burdy-styled modal directly into the parent page DOM so it overlays everything."""
+    safe = message.replace("'", "\\'").replace("\n", " ")
+    unique = int(time.time() * 1000)
+    components.html(f"""
+<script>
+(function() {{
+  var _ts = {unique}; // forces Streamlit to treat this as a new component each call
+  // Remove any existing modal
+  var old = window.parent.document.getElementById('burdy-error-modal');
+  if (old) old.remove();
+
+  // Inject Google Fonts into parent if not already there
+  if (!window.parent.document.getElementById('burdy-fonts')) {{
+    var link = window.parent.document.createElement('link');
+    link.id = 'burdy-fonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap';
+    window.parent.document.head.appendChild(link);
+  }}
+
+  var css = `
+    #burdy-error-modal {{
+      position: fixed;
+      inset: 0;
+      background: rgba(20,21,24,0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999999;
+      animation: burdyFadeIn .18s ease;
+    }}
+    @keyframes burdyFadeIn {{ from {{ opacity:0 }} to {{ opacity:1 }} }}
+    #burdy-error-modal .bm {{
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 36px 28px;
+      max-width: 460px;
+      width: 90%;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.10);
+      animation: burdySlideUp .2s ease;
+    }}
+    @keyframes burdySlideUp {{ from {{ transform:translateY(16px);opacity:0 }} to {{ transform:translateY(0);opacity:1 }} }}
+    #burdy-error-modal .bm::before {{
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #E8520A, #c94308, transparent);
+    }}
+    #burdy-error-modal .bm-title {{
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: -.02em;
+      color: #141518;
+      margin-bottom: 8px;
+    }}
+    #burdy-error-modal .bm-msg {{
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      color: #6B7280;
+      line-height: 1.65;
+      margin-bottom: 24px;
+    }}
+    #burdy-error-modal .bm-btn {{
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      background: #E8520A;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      cursor: pointer;
+      transition: background .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 3px 14px rgba(232,82,10,.3);
+    }}
+    #burdy-error-modal .bm-btn:hover {{
+      background: #c94308;
+      transform: translateY(-1px);
+      box-shadow: 0 5px 20px rgba(232,82,10,.4);
+    }}
+  `;
+
+  var style = window.parent.document.createElement('style');
+  style.id = 'burdy-error-style';
+  var oldStyle = window.parent.document.getElementById('burdy-error-style');
+  if (oldStyle) oldStyle.remove();
+  style.textContent = css;
+  window.parent.document.head.appendChild(style);
+
+  var modal = window.parent.document.createElement('div');
+  modal.id = 'burdy-error-modal';
+  modal.innerHTML = `
+    <div class="bm">
+      <div class="bm-title">Invalid Postcode</div>
+      <div class="bm-msg">{safe}</div>
+      <div style="text-align:center;"><button class="bm-btn" id="burdy-dismiss">Dismiss</button></div>
+    </div>
+  `;
+  window.parent.document.body.appendChild(modal);
+
+  function dismiss() {{
+    var m = window.parent.document.getElementById('burdy-error-modal');
+    if (m) {{
+      m.style.opacity = '0';
+      m.style.transition = 'opacity .15s ease';
+      setTimeout(function() {{ m.remove(); }}, 150);
+    }}
+  }}
+
+  window.parent.document.getElementById('burdy-dismiss').addEventListener('click', dismiss);
+  modal.addEventListener('click', function(e) {{ if (e.target === modal) dismiss(); }});
+  window.parent.document.addEventListener('keydown', function handler(e) {{
+    if (e.key === 'Escape') {{ dismiss(); window.parent.document.removeEventListener('keydown', handler); }}
+  }});
+}})();
+</script>
+""", height=1, scrolling=False)
+
+
+def classify_postcode(raw):
+    """Return 'uk' if the format matches a UK postcode, else 'non_uk'."""
+    import re
+    pc = raw.strip().upper().replace(" ", "")
+    if re.fullmatch(r"[A-Z]{1,2}[0-9][0-9A-Z]?[0-9][A-Z]{2}", pc):
+        return "uk"
+    return "non_uk"
+
+
 def get_location(postcode_input):
     geo = requests.get(
         POSTCODE_API.format(postcode_input.replace(" ", "").upper())
     ).json()
     if not geo.get("result"):
-        return None, None
-    return geo["result"]["latitude"], geo["result"]["longitude"]
+        return None, None, None
+    r = geo["result"]
+    info = {
+        "postcode":          r.get("postcode"),
+        "admin_district":    r.get("admin_district"),
+        "admin_district_code": r.get("codes", {}).get("admin_district"),
+        "admin_county":      r.get("admin_county"),
+        "admin_ward":        r.get("admin_ward"),
+        "parish":            r.get("parish"),
+        "region":            r.get("region"),
+        "country":           r.get("country"),
+        "parliamentary_constituency": r.get("parliamentary_constituency"),
+        "nhs_ha":            r.get("nhs_ha"),
+    }
+    return r["latitude"], r["longitude"], info
 
 
 def upsert_batch(events_dict, strip_keys=None):
@@ -1354,10 +1791,15 @@ if find_events:
         _abort = True
 
     if not _abort:
-        lat, lon = get_location(postcode)
+        lat, lon, postcode_info = get_location(postcode)
         if lat is None:
-            st.error("Invalid postcode")
+            if classify_postcode(postcode) != "uk":
+                burdy_error("This looks like a non UK postcode. Please enter a valid UK postcode (e.g. B2 5RE, SW1A 1AA).")
+            else:
+                burdy_error("Postcode not found. Please check the postcode and try again.")
             _abort = True
+        else:
+            st.session_state["postcode_info"] = postcode_info
 
     if not _abort:
         progress = st.progress(0)
@@ -1413,14 +1855,35 @@ if find_events:
         st.session_state["_search_radius"] = radius
         st.session_state["_last_filter_key"] = "|"
 
+        new_events_count = after_total - before_total
+        st.session_state["new_events_count"] = new_events_count
+
+        # Fetch the newest events by Created At for the popup
+        if new_events_count > 0:
+            try:
+                newest_rows = supabase.table("BurdySteupTest")\
+                    .select("Name, \"Venue Name\", Date, Type, url, \"Created At\"")\
+                    .order("Created At", desc=True)\
+                    .limit(new_events_count)\
+                    .execute().data
+                st.session_state["newest_events"] = newest_rows
+            except Exception as ex:
+                st.session_state["newest_events"] = []
+        else:
+            st.session_state["newest_events"] = []
+
         status.empty()
         progress.empty()
 
         # Final update with all real values
         stats_slot.markdown(
-            _stat_row(tm_count, sk_count, after_total - before_total, after_radius_count, after_total, radius),
+            _stat_row(tm_count, sk_count, new_events_count, after_radius_count, after_total, radius),
             unsafe_allow_html=True
         )
+
+        # Register the new events modal listener if there are new events
+        if new_events_count > 0:
+            burdy_new_events_modal(st.session_state["newest_events"])
 
 # =====================================================
 # SEARCH VIEW
@@ -1430,10 +1893,14 @@ if search_db:
     if not postcode:
         st.warning("Enter a postcode first")
     else:
-        lat, lon = get_location(postcode)
+        lat, lon, postcode_info = get_location(postcode)
         if lat is None:
-            st.error("Invalid postcode")
+            if classify_postcode(postcode) != "uk":
+                burdy_error("This looks like a non UK postcode. Please enter a valid UK postcode (e.g. B2 5RE, SW1A 1AA).")
+            else:
+                burdy_error("Postcode not found. Please check the postcode and try again.")
         else:
+            st.session_state["postcode_info"] = postcode_info
             rows = rpc_fetch_all(
                 "search_within_radius",
                 {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
@@ -1456,6 +1923,94 @@ if search_db:
 df    = st.session_state.get("search_df", pd.DataFrame())
 label = st.session_state.get("search_label", "")
 
+# ── Postcode info panel ──
+_pci = st.session_state.get("postcode_info")
+if _pci:
+    def _pci_field(label, value):
+        if not value or value == "—":
+            return ""
+        return f"""<div><div class="field-label">{label}</div><div class="field-value">{value}</div></div>"""
+
+    council_name = _pci.get("admin_district") or "—"
+    council_code = _pci.get("admin_district_code") or "—"
+    county       = _pci.get("admin_county") or "—"
+    ward         = _pci.get("admin_ward") or "—"
+    parish       = _pci.get("parish") or "—"
+    region       = _pci.get("region") or "—"
+    country      = _pci.get("country") or "—"
+    constituency = _pci.get("parliamentary_constituency") or "—"
+    nhs_ha       = _pci.get("nhs_ha") or "—"
+    postcode_fmt = _pci.get("postcode") or "—"
+
+    fields_html = "".join(filter(None, [
+        _pci_field("Postcode",            postcode_fmt),
+        _pci_field("Council",             council_name),
+        _pci_field("Council Code",        council_code),
+        _pci_field("County",              county),
+        _pci_field("Ward",                ward),
+        _pci_field("Parish",              parish),
+        _pci_field("Region",              region),
+        _pci_field("Country",             country),
+        _pci_field("Constituency",        constituency),
+        _pci_field("NHS Health Authority", nhs_ha),
+    ]))
+
+    _card_html = f"""<!DOCTYPE html><html><head>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+html, body {{ background:transparent; overflow:hidden; }}
+.card {{
+    background:#fff;
+    border:1px solid rgba(0,0,0,.09);
+    border-radius:14px;
+    padding:20px 24px;
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 2px 10px rgba(0,0,0,.05);
+}}
+.card::before {{
+    content:'';
+    position:absolute;
+    top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,#E8520A,#179948,transparent);
+}}
+.heading {{
+    font-family:'DM Mono',monospace;
+    font-size:10px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:#A0A7B4;
+    margin-bottom:14px;
+}}
+.fields {{
+    display:flex;
+    flex-wrap:wrap;
+    gap:20px 32px;
+}}
+.field-label {{
+    font-family:'DM Mono',monospace;
+    font-size:9px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:#A0A7B4;
+    margin-bottom:2px;
+}}
+.field-value {{
+    font-family:'DM Sans',sans-serif;
+    font-size:13px;
+    font-weight:500;
+    color:#141518;
+}}
+</style>
+</head><body>
+<div class="card">
+  <div class="heading">&#9670; &nbsp;Postcode Intelligence</div>
+  <div class="fields">{fields_html}</div>
+</div>
+</body></html>"""
+
+    components.html(_card_html, height=110, scrolling=False)
 # ── Helper: run a filtered Supabase query ──
 def run_filtered_query(lat, lon, radius, type_filters=None, venue_filters=None):
     params = {
