@@ -2089,9 +2089,8 @@ def render_table(df, page=1, per_page=25):
 <style>
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
-table {{ width:100%; min-width:640px; border-collapse:collapse; background:#fff; }}
-.table-wrap {{ border-radius:14px; overflow-x:auto; overflow-y:hidden;
-               -webkit-overflow-scrolling:touch; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
+table {{ width:100%; border-collapse:collapse; background:#fff; }}
+.table-wrap {{ border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); }}
 </style></head><body>
   <div class="table-wrap"><table>{page_html}</table></div>
 </body></html>"""
@@ -2199,8 +2198,7 @@ def render_calendar(df, year, month):
 * {{ box-sizing:border-box; margin:0; padding:0; }}
 body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .cal-wrap {{ background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); border:1px solid rgba(0,0,0,.09); position:relative; }}
-.cal-scroll {{ overflow-x:auto; -webkit-overflow-scrolling:touch; }}
-.cal-grid {{ display:grid; grid-template-columns:repeat(7,1fr); min-width:630px; }}
+.cal-grid {{ display:grid; grid-template-columns:repeat(7,1fr); }}
 .cal-head {{ padding:10px 8px; font-family:'DM Mono',monospace; font-size:11px; color:#6B7280;
              text-transform:uppercase; letter-spacing:.08em; text-align:center;
              background:#F4F5F7; border-bottom:1px solid rgba(0,0,0,.09); }}
@@ -2267,9 +2265,7 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .detail-link:hover {{ background:#c94308; }}
 </style></head><body>
   <div class="cal-wrap">
-    <div class="cal-scroll">
-      <div class="cal-grid">{day_headers}{cells_html}</div>
-    </div>
+    <div class="cal-grid">{day_headers}{cells_html}</div>
 
     <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this) closeModal()">
       <div class="modal-box">
