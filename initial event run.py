@@ -3,6 +3,8 @@ import requests
 import time
 import pandas as pd
 import hashlib
+import calendar
+import json
 from PIL import Image
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
@@ -654,6 +656,30 @@ EVENTCODE_MAP = {
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def log_search_event(action, postcode=None, radius=None, lat=None, lon=None,
+                      results_count=None, new_events_count=None):
+    """Write one row to the Burdy Search Log table for every Search / Fetch & Sync run."""
+    try:
+        supabase.table("Burdy Search Log").insert({
+            "action":            action,
+            "postcode":          postcode.upper() if postcode else None,
+            "radius_miles":      radius,
+            "latitude":          lat,
+            "longitude":         lon,
+            "results_count":     results_count,
+            "new_events_count":  new_events_count,
+            "searched_at":       datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as e:
+        st.warning(f"Couldn't write to Burdy Search Log: {e}")
+
+def get_search_log_count():
+    """Total number of searches (Search + Fetch & Sync runs) stored in Burdy Search Log."""
+    try:
+        return supabase.table("Burdy Search Log").select("id", count="exact").execute().count or 0
+    except Exception:
+        return 0
+
 # =====================================================
 # HEADER
 # =====================================================
@@ -749,7 +775,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-components.html("""
+_hero_html = """
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -939,8 +965,8 @@ components.html("""
       </div>
       <div class="divider"></div>
       <div style="text-align:center;">
-        <div class="stat-val">Real-time</div>
-        <div class="stat-lbl">Supabase sync</div>
+        <div class="stat-val">__SEARCH_COUNT__</div>
+        <div class="stat-lbl">Searches Completed</div>
       </div>
       <div class="divider"></div>
       <div style="text-align:center;">
@@ -960,7 +986,10 @@ components.html("""
   letter-spacing:-.02em;color:#141518;margin:20px 0 8px;text-align:center;">
   Run a Search
 </div>
-""", height=520, scrolling=False)
+"""
+
+_hero_html = _hero_html.replace("__SEARCH_COUNT__", str(get_search_log_count()))
+components.html(_hero_html, height=520, scrolling=False)
 
 col1, col2, col3, col4 = st.columns([2, 4, 1, 1])
 
@@ -1118,12 +1147,115 @@ def _stat_row(tm, sk, new_events, nearby, total, radius_label):
   </div>
 </div>"""
 
+def _stat_row_initial(total, today, this_week):
+    return f"""
+<div class="stat-row">
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{total}</div>
+    <div class="stat-label">Total in Database</div>
+  </div>
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{today}</div>
+    <div class="stat-label">Events Today</div>
+  </div>
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{this_week}</div>
+    <div class="stat-label">Events This Week</div>
+  </div>
+</div>"""
+
+def get_events_today_count():
+    try:
+        _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return supabase.table("BurdySteupTest").select("ID", count="exact") \
+            .eq("Date", _today).execute().count or 0
+    except Exception:
+        return "—"
+
+def get_events_this_week_count():
+    try:
+        _today     = datetime.now(timezone.utc).date()
+        _week_end  = _today + timedelta(days=6)
+        return supabase.table("BurdySteupTest").select("ID", count="exact") \
+            .gte("Date", _today.strftime("%Y-%m-%d")) \
+            .lte("Date", _week_end.strftime("%Y-%m-%d")) \
+            .execute().count or 0
+    except Exception:
+        return "—"
+
+def _stat_row_search(today_count, week_count, nearby_count, total_db, radius_label):
+    return f"""
+<div class="stat-row">
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{today_count}</div>
+    <div class="stat-label">Events Today within {radius_label} miles</div>
+  </div>
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{week_count}</div>
+    <div class="stat-label">Events This Week within {radius_label} miles</div>
+  </div>
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{nearby_count}</div>
+    <div class="stat-label">Events within {radius_label} miles</div>
+  </div>
+  <div class="stat-box" style="flex:1;">
+    <div class="stat-num">{total_db}</div>
+    <div class="stat-label">Events in Database</div>
+  </div>
+</div>"""
+
+def _parse_date_safe(val):
+    """Parse a single date value, trying a fast ISO path then falling back to
+    a lenient parse (handles DD/MM/YYYY, timestamps, etc)."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    s = str(val).strip()
+    if not s or s.lower() == "none":
+        return None
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    try:
+        from dateutil import parser as _date_parser
+        return _date_parser.parse(s, dayfirst=True).date()
+    except Exception:
+        return None
+
+def _count_in_date_range(df, start_date, end_date):
+    """Count rows in a search-result DataFrame whose event_date falls within [start_date, end_date]."""
+    if df is None or df.empty:
+        return 0
+    col_lower = {c.lower(): c for c in df.columns}
+    date_col = (
+        col_lower.get("event_date")
+        or col_lower.get("date")
+        or col_lower.get("eventdate")
+    )
+    if not date_col:
+        st.warning(
+            "Couldn't find a date column in the search results, so the "
+            "'Events Today / This Week within X miles' cards can't be computed. "
+            f"Columns actually returned by search_within_radius: {list(df.columns)}"
+        )
+        return "—"
+
+    parsed  = df[date_col].apply(_parse_date_safe)
+    matches = parsed.apply(lambda d: d is not None and start_date <= d <= end_date)
+    return int(matches.sum())
+
 stats_slot = st.empty()
 try:
     _initial_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
 except Exception:
     _initial_total = "—"
-stats_slot.markdown(_stat_row("—", "—", "—", "—", _initial_total, radius), unsafe_allow_html=True)
+_initial_today     = get_events_today_count()
+_initial_this_week = get_events_this_week_count()
+stats_slot.markdown(
+    _stat_row_initial(_initial_total, _initial_today, _initial_this_week),
+    unsafe_allow_html=True
+)
 
 # Reserve the footer slot immediately so it is always in the DOM,
 # even while the fetch progress bar is updating.
@@ -1521,16 +1653,359 @@ def upsert_batch(events_dict, strip_keys=None):
     return len(batch)
 
 
+# =====================================================
+# IMPACT SCORE ENGINE
+# =====================================================
+# Calculates a 0-100 impact score from fields already
+# available in the event data returned by Ticketmaster
+# and Skiddle. Fields not available (Spotify, social)
+# default to 0 — they can be enriched later.
+
+from datetime import date as _date
+
+# Map event type strings to internal category
+_TYPE_MAP = {
+    "festival":    4,
+    "live music":  1,
+    "concert":     1,
+    "comedy":      2,
+    "sport":       3,
+    "clubbing":    1,
+    "theatre":     2,
+    "exhibition":  5,
+    "conference":  5,
+    "arts":        2,
+    "kids":        2,
+    "family":      2,
+}
+
+# Approximate UK city populations for venue-city fit
+_CITY_POP = {
+    "london":       9_000_000,
+    "birmingham":   1_100_000,
+    "manchester":   550_000,
+    "glasgow":      630_000,
+    "leeds":        800_000,
+    "liverpool":    500_000,
+    "sheffield":    580_000,
+    "bristol":      470_000,
+    "edinburgh":    520_000,
+    "cardiff":      360_000,
+    "belfast":      340_000,
+    "nottingham":   330_000,
+    "leicester":    360_000,
+    "coventry":     370_000,
+    "newcastle":    300_000,
+}
+
+# Approximate venue capacities by name keyword
+_VENUE_CAPS = {
+    "stadium":        40_000,
+    "arena":          15_000,
+    "nec":            12_000,
+    "hippodrome":      1_800,
+    "symphony hall":   2_300,
+    "town hall":       1_500,
+    "academy":         2_000,
+    "o2 academy":      2_000,
+    "institute":       1_500,
+    "civic hall":      1_600,
+    "barclaycard":    15_000,
+    "utilita":        15_000,
+    "genting":         1_600,
+    "mill":              500,
+    "hall":            2_500,
+    "theatre":         1_200,
+    "amphitheatre":    5_000,
+    "forum":           2_500,
+    "pavilion":        1_000,
+    "o2":              2_000,
+    "jam house":         400,
+    "hare and hounds":   300,
+    "castle":            400,
+    "warehouse":         800,
+    "factory":           600,
+    "arts centre":     1_000,
+    "arts club":         500,
+    "plaza":             800,
+    "ballroom":        1_200,
+    "venue":           1_000,
+    "club":              600,
+    "bar":               300,
+    "pub":               200,
+    "restaurant":        150,
+    "cafe":              100,
+}
+
+
+def _guess_capacity(venue_name):
+    """Estimate venue capacity from venue name keywords."""
+    if not venue_name:
+        return 1_000
+    vl = str(venue_name).lower()
+    for kw, cap in _VENUE_CAPS.items():
+        if kw in vl:
+            return cap
+    return 1_000
+
+
+def _guess_city_pop(city):
+    """Look up approximate city population."""
+    if not city:
+        return 500_000
+    return _CITY_POP.get(str(city).lower(), 500_000)
+
+
+def _guess_event_type(type_str, name_str):
+    """Map type/name string to internal 1-5 category."""
+    combined = f"{type_str or ''} {name_str or ''}".lower()
+    for kw, cat in _TYPE_MAP.items():
+        if kw in combined:
+            return cat
+    return 1  # default: concert
+
+
+def _day_score(date_str):
+    """Score 4-8 based on day of week (Sat=8)."""
+    try:
+        d = _date.fromisoformat(str(date_str)[:10])
+        return [4, 4, 5, 6, 7, 8, 7][d.weekday()]
+    except Exception:
+        return 6
+
+
+def _months_until(date_str):
+    """Months between today and event date."""
+    try:
+        ev = _date.fromisoformat(str(date_str)[:10])
+        delta = (ev - _date.today()).days / 30
+        return max(0, delta)
+    except Exception:
+        return 3.0
+
+
+def _price_score(min_age):
+    """
+    We don't have ticket price in the feed, so we use min_age as a proxy:
+    18+ events tend to be priced mid-range; all-ages often cheaper;
+    no age restriction → assume mid (score 6).
+    """
+    try:
+        age = int(float(str(min_age)))
+        if age == 0:
+            return 8   # all-ages / free-ish
+        if age < 18:
+            return 7
+        return 6       # 18+ mainstream
+    except Exception:
+        return 6
+
+
+def _type_modifier(event_type_int):
+    return {1: 0, 2: 0, 3: 1, 4: 2, 5: -2}.get(event_type_int, 0)
+
+
+def _get(row, *keys):
+    """Case-insensitive field lookup — handles any column naming convention."""
+    # Build normalised lookup once: lowercase + spaces-to-underscores
+    index = list(row.index) if hasattr(row, "index") else list(row.keys())
+    norm  = {str(k).lower().replace(" ", "_"): k for k in index}
+    for key in keys:
+        # 1. exact match
+        if key in index:
+            v = row[key]
+            if v is not None and str(v) not in ("", "nan", "None", "NaN"):
+                return v
+        # 2. normalised match
+        nk = str(key).lower().replace(" ", "_")
+        if nk in norm:
+            v = row[norm[nk]]
+            if v is not None and str(v) not in ("", "nan", "None", "NaN"):
+                return v
+    return ""
+
+
+def calculate_impact_score(row):
+    """
+    Given a pandas Series (one event row), return an integer impact score 0-100.
+
+    Uses case-insensitive field lookup (_get) so it works regardless of whether
+    Supabase / the search RPC returns 'Venue Name', 'venue_name', 'venuename', etc.
+
+    Dimensions and max points:
+      Venue scale          0-25   (capacity inferred from venue name)
+      Event type           0-20   (festival > concert > comedy > conference)
+      Artist signal        0-15   (named artists, headliner keywords)
+      Date timing          0-15   (proximity + day of week)
+      City market size     0-10   (major city = larger potential audience)
+      Name/brand signal    0-10   (keywords: tour, headline, sold out, etc.)
+      Distance             0-5    (closer to search postcode = more relevant)
+    Total                  0-100
+    """
+    name       = str(_get(row, "name",       "Name",       "event_name",  "eventname")).strip()
+    date_str   = str(_get(row, "event_date", "Date",       "date",        "start_date"))
+    type_str   = str(_get(row, "type",       "Type",       "event_type",  "category"))
+    venue_name = str(_get(row, "venue_name", "Venue Name", "venue",       "venuename"))
+    city       = str(_get(row, "city",       "City",       "town",        "location"))
+    artists    = str(_get(row, "artists",    "Artists",    "artist",      "performers"))
+    genres     = str(_get(row, "genres",     "Genres",     "genre"))
+    distance   = _get(row, "distance", "Distance", "dist") or 0
+
+    name_lower  = name.lower()
+    venue_lower = venue_name.lower()
+    type_lower  = type_str.lower()
+
+    # ── 1. VENUE SCALE  (0-25) ──────────────────────────────
+    # Larger venues = higher potential impact
+    capacity = _guess_capacity(venue_name)
+    if capacity >= 20_000:   venue_pts = 25
+    elif capacity >= 10_000: venue_pts = 22
+    elif capacity >= 5_000:  venue_pts = 18
+    elif capacity >= 2_000:  venue_pts = 14
+    elif capacity >= 1_000:  venue_pts = 10
+    elif capacity >= 500:    venue_pts = 6
+    else:                    venue_pts = 3
+
+    # ── 2. EVENT TYPE  (0-20) ───────────────────────────────
+    # Festivals and arena-scale events naturally draw more
+    event_type_int = _guess_event_type(type_str, name)
+    type_pts = {
+        4: 20,   # Festival
+        1: 14,   # Concert / Live Music / Clubbing
+        3: 16,   # Sport
+        2: 12,   # Comedy / Theatre / Arts
+        5: 6,    # Conference / Exhibition
+    }.get(event_type_int, 10)
+
+    # ── 3. ARTIST SIGNAL  (0-15) ────────────────────────────
+    # Named headliners, multiple artists, or recognised genre keywords
+    artist_pts = 0
+    if artists and len(artists.strip()) > 2:
+        n_artists = len([a for a in artists.split(",") if a.strip()])
+        if n_artists >= 5:   artist_pts = 15   # multi-act lineup
+        elif n_artists >= 3: artist_pts = 12
+        elif n_artists >= 1: artist_pts = 9
+    else:
+        # No named artists in feed — use name/genre keywords as signal
+        high_signal = ["tour", "headline", "live", "festival", "presents", "vs ", " ft "]
+        if any(kw in name_lower for kw in high_signal):
+            artist_pts = 7
+        elif genres and len(genres.strip()) > 2:
+            artist_pts = 5
+        else:
+            artist_pts = 3
+
+    # ── 4. DATE TIMING  (0-15) ──────────────────────────────
+    # Combination of: how soon (sweet spot 2-8 weeks), day of week
+    months_adv = _months_until(date_str)
+    day_pts    = _day_score(date_str)  # 4-8
+
+    # Proximity score: events 0.5-2 months away score highest
+    if months_adv < 0:
+        prox_pts = 0   # past
+    elif months_adv <= 0.05:
+        prox_pts = 7   # today / tomorrow — happening now
+    elif months_adv <= 0.5:
+        prox_pts = 7   # this week / next few weeks
+    elif months_adv <= 2:
+        prox_pts = 6   # prime booking window
+    elif months_adv <= 6:
+        prox_pts = 4
+    elif months_adv <= 12:
+        prox_pts = 2
+    else:
+        prox_pts = 1   # far out
+
+    # Day of week normalised to 0-8, combined with proximity
+    date_pts = min(15, prox_pts + (day_pts - 4))   # day_pts 4-8 → adds 0-4
+
+    # ── 5. CITY MARKET SIZE  (0-10) ─────────────────────────
+    city_pop = _guess_city_pop(city)
+    if city_pop >= 5_000_000:   city_pts = 10
+    elif city_pop >= 1_000_000: city_pts = 8
+    elif city_pop >= 500_000:   city_pts = 6
+    elif city_pop >= 250_000:   city_pts = 4
+    else:                       city_pts = 2
+
+    # ── 6. NAME / BRAND SIGNAL  (0-10) ──────────────────────
+    # Keywords in event name that suggest scale or demand
+    name_pts = 0
+    boost_words = {
+        "sold out": 10, "arena": 9, "stadium": 9, "tour": 7,
+        "headline": 7,  "world": 6,  "uk":  5,   "live": 4,
+        "official": 4,  "presents": 3,
+    }
+    for word, pts in boost_words.items():
+        if word in name_lower:
+            name_pts = max(name_pts, pts)   # take highest match
+
+    # ── 7. DISTANCE  (0-5) ──────────────────────────────────
+    # Closer events are more relevant to the searcher
+    try:
+        dist = float(distance)
+        if dist <= 1:    dist_pts = 5
+        elif dist <= 5:  dist_pts = 4
+        elif dist <= 10: dist_pts = 3
+        elif dist <= 20: dist_pts = 2
+        else:            dist_pts = 1
+    except (TypeError, ValueError):
+        dist_pts = 3   # unknown distance → neutral
+
+    total = int(max(0, min(100,
+        venue_pts + type_pts + artist_pts + date_pts + city_pts + name_pts + dist_pts
+    )))
+    return total
+
+
+def score_label(score):
+    """Return (label, hex_colour) for a given score."""
+    if score >= 85:
+        return "Blockbuster", "#179948"
+    if score >= 65:
+        return "Strong",      "#E8520A"
+    if score >= 45:
+        return "Moderate",    "#d97706"
+    return "Low",             "#dc2626"
+
+
+def add_impact_scores(df):
+    """Add Impact Score and Rating columns to a dataframe of events."""
+    if df.empty:
+        return df
+    df = df.copy()
+
+    df["Impact Score"] = df.apply(calculate_impact_score, axis=1)
+    df["Rating"]        = df["Impact Score"].apply(lambda s: score_label(s)[0])
+    return df
+
+
 def render_rows(data_df):
+    # Add impact scores before rendering
+    data_df = add_impact_scores(data_df)
+
     cols = list(data_df.columns)
 
     # Find the actual column names regardless of casing
-    col_lower = {c.lower(): c for c in cols}
-    name_col  = col_lower.get("name")
-    url_col   = col_lower.get("url")
+    col_lower  = {c.lower(): c for c in cols}
+    name_col   = col_lower.get("name")
+    url_col    = col_lower.get("url")
+    score_col  = "Impact Score"
+    rating_col = "Rating"
 
-    # Display all columns except the url column
-    display_cols = [c for c in cols if c != url_col]
+    # Display all columns except the url column; put Impact Score + Rating first
+    priority = [score_col, rating_col]
+    display_cols = (
+        [c for c in priority if c in cols] +
+        [c for c in cols if c not in priority and c != url_col]
+    )
+
+    # Badge colours
+    _BADGE = {
+        "Blockbuster": ("rgba(23,153,72,.12)",  "#0f7035"),
+        "Strong":      ("rgba(232,82,10,.12)",  "#c94308"),
+        "Moderate":    ("rgba(217,119,6,.12)",  "#92400e"),
+        "Low":         ("rgba(220,38,38,.10)",  "#991b1b"),
+    }
 
     headers = "".join(
         f"<th style='padding:10px 14px;text-align:left;font-family:DM Mono,monospace;"
@@ -1543,7 +2018,35 @@ def render_rows(data_df):
         cells = []
         for col in display_cols:
             val = row[col] if pd.notna(row[col]) else ""
-            if col == name_col and url_col:
+
+            if col == score_col:
+                # Render as a number with mini progress bar
+                score_int = int(val) if val != "" else 0
+                bar_color = score_label(score_int)[1]
+                cell = (
+                    f"<td style='padding:8px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                    f"background:#fff;white-space:nowrap;min-width:90px;'>"
+                    f"<div style='font-family:DM Mono,monospace;font-size:13px;font-weight:600;"
+                    f"color:{bar_color};margin-bottom:4px;'>{score_int}<span style='font-size:10px;"
+                    f"color:#A0A7B4;font-weight:400;'>/100</span></div>"
+                    f"<div style='height:3px;background:#F0F1F4;border-radius:2px;'>"
+                    f"<div style='width:{score_int}%;height:3px;background:{bar_color};"
+                    f"border-radius:2px;'></div></div></td>"
+                )
+
+            elif col == rating_col:
+                # Render as a pill badge
+                bg, fg = _BADGE.get(str(val), ("rgba(0,0,0,.06)", "#6B7280"))
+                cell = (
+                    f"<td style='padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                    f"background:#fff;white-space:nowrap;'>"
+                    f"<span style='display:inline-block;padding:3px 10px;border-radius:999px;"
+                    f"font-family:DM Mono,monospace;font-size:10px;font-weight:600;"
+                    f"letter-spacing:.06em;text-transform:uppercase;"
+                    f"background:{bg};color:{fg};'>{val}</span></td>"
+                )
+
+            elif col == name_col and url_col:
                 url_val = row.get(url_col, "")
                 if pd.notna(url_val) and str(url_val).startswith("http"):
                     cell = (
@@ -1594,6 +2097,269 @@ table {{ width:100%; border-collapse:collapse; background:#fff; }}
 
     components.html(html, height=total_height, scrolling=False)
     return total_pages, page
+
+
+def render_calendar(df, year, month):
+    """Render a month-grid calendar view of events, grouped by their event_date.
+    Days are clickable to show the full list of events; each event is clickable
+    for more detail (venue, type, city, time, Impact Score/Rating, and a link if available)."""
+    df = add_impact_scores(df)
+
+    col_lower  = {c.lower(): c for c in df.columns}
+    date_col   = col_lower.get("event_date") or col_lower.get("date") or col_lower.get("eventdate")
+    name_col   = col_lower.get("name")
+    venue_col  = col_lower.get("venue_name")
+    type_col   = col_lower.get("type")
+    city_col   = col_lower.get("city")
+    time_col   = col_lower.get("event_time") or col_lower.get("time")
+    url_col    = col_lower.get("url")
+    score_col  = "Impact Score" if "Impact Score" in df.columns else None
+    rating_col = "Rating" if "Rating" in df.columns else None
+
+    def _cell(row, col):
+        return str(row[col]) if col and pd.notna(row.get(col, None)) else ""
+
+    events_by_day = {}
+    if date_col:
+        for _, row in df.iterrows():
+            d = _parse_date_safe(row[date_col])
+            if d is None or d.year != year or d.month != month:
+                continue
+            score = int(row[score_col]) if score_col and pd.notna(row.get(score_col, None)) else None
+            events_by_day.setdefault(d.day, []).append({
+                "name":   _cell(row, name_col)  or "Event",
+                "venue":  _cell(row, venue_col),
+                "type":   _cell(row, type_col),
+                "city":   _cell(row, city_col),
+                "time":   _cell(row, time_col),
+                "url":    _cell(row, url_col),
+                "score":  score,
+                "rating": _cell(row, rating_col) if rating_col else "",
+            })
+
+    # Highest Impact Score first within each day (instead of start time / insertion order)
+    for _events in events_by_day.values():
+        _events.sort(key=lambda e: e["score"] if e["score"] is not None else -1, reverse=True)
+
+    cal_obj = calendar.Calendar(firstweekday=0)  # Monday start
+    weeks   = cal_obj.monthdayscalendar(year, month)
+    today   = datetime.now(timezone.utc).date()
+
+    # Rating → colour, matching the List view's badge palette
+    _RATING_COLORS = {
+        "Blockbuster": "#179948",
+        "Strong":      "#E8520A",
+        "Moderate":    "#d97706",
+        "Low":         "#dc2626",
+    }
+
+    day_headers = "".join(
+        f"<div class='cal-head'>{d}</div>" for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    )
+
+    cells_html = ""
+    for week in weeks:
+        for day in week:
+            if day == 0:
+                cells_html += "<div class='cal-cell cal-empty'></div>"
+                continue
+            day_events = events_by_day.get(day, [])
+            is_today   = (day == today.day and month == today.month and year == today.year)
+            badge      = f"<span class='cal-count'>{len(day_events)}</span>" if day_events else ""
+            items_html = ""
+            for e in day_events[:3]:
+                title_esc = (e["name"] + (f" — {e['venue']}" if e["venue"] else "")).replace('"', "&quot;")
+                dot_color = _RATING_COLORS.get(e["rating"], "#A0A7B4")
+                items_html += (
+                    f"<div class='cal-event' title=\"{title_esc}\">"
+                    f"<span class='cal-event-dot' style='background:{dot_color};'></span>"
+                    f"{e['name'][:20]}</div>"
+                )
+            if len(day_events) > 3:
+                items_html += f"<div class='cal-more'>+{len(day_events) - 3} more</div>"
+            clickable  = " cal-clickable" if day_events else ""
+            cell_class = "cal-cell" + (" cal-today" if is_today else "") + clickable
+            onclick    = f' onclick="openDay({day})"' if day_events else ""
+            cell_style = ' style="cursor:pointer;"' if day_events else ""
+            cells_html += f"""<div class="{cell_class}"{onclick}{cell_style}>
+                <div class="cal-daynum">{day}{badge}</div>
+                <div class="cal-events">{items_html}</div>
+            </div>"""
+
+    n_weeks      = len(weeks)
+    grid_height  = 46 + (n_weeks * 108) + 20
+
+    events_json = json.dumps(events_by_day).replace("</", "<\\/")
+    month_label = f"{calendar.month_name[month]} {year}"
+
+    html = f"""<!DOCTYPE html><html><head>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
+.cal-wrap {{ background:#fff; border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.05); border:1px solid rgba(0,0,0,.09); position:relative; }}
+.cal-grid {{ display:grid; grid-template-columns:repeat(7,1fr); }}
+.cal-head {{ padding:10px 8px; font-family:'DM Mono',monospace; font-size:11px; color:#6B7280;
+             text-transform:uppercase; letter-spacing:.08em; text-align:center;
+             background:#F4F5F7; border-bottom:1px solid rgba(0,0,0,.09); }}
+.cal-cell {{ min-height:100px; border-right:1px solid rgba(0,0,0,.06); border-bottom:1px solid rgba(0,0,0,.06);
+             padding:6px; position:relative; }}
+.cal-empty {{ background:#FAFAFB; }}
+.cal-today {{ background:rgba(232,82,10,.05); }}
+.cal-clickable {{ cursor:pointer; transition:background .15s; }}
+.cal-clickable:hover {{ background:rgba(232,82,10,.06); }}
+.cal-daynum {{ font-family:'Syne',sans-serif; font-weight:700; font-size:13px; color:#141518;
+               display:flex; align-items:center; gap:6px; margin-bottom:4px; }}
+.cal-count {{ background:#E8520A; color:#fff; font-family:'DM Mono',monospace; font-size:9px;
+              padding:1px 6px; border-radius:999px; }}
+.cal-event {{ font-size:10px; color:#141518; background:#F4F5F7; border-radius:4px;
+              padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+              display:flex; align-items:center; gap:4px; }}
+.cal-event-dot {{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }}
+.cal-more {{ font-size:9px; color:#A0A7B4; font-family:'DM Mono',monospace; }}
+
+/* ── Modal ── */
+.modal-overlay {{ display:none; position:absolute; inset:0; background:rgba(20,21,24,.55);
+                   z-index:1000; align-items:center; justify-content:center; padding:20px; }}
+.modal-overlay.open {{ display:flex; }}
+.modal-box {{ background:#fff; border-radius:14px; width:100%; max-width:420px; max-height:100%;
+              display:flex; flex-direction:column; overflow:hidden;
+              box-shadow:0 12px 40px rgba(0,0,0,.25); position:relative; }}
+.modal-box::before {{ content:''; position:absolute; top:0; left:0; right:0; height:3px;
+                       background:linear-gradient(90deg,#E8520A,#179948,transparent); z-index:1; }}
+.modal-header {{ display:flex; align-items:center; justify-content:space-between;
+                  padding:18px 20px 12px; border-bottom:1px solid rgba(0,0,0,.08);
+                  flex-shrink:0; background:#fff; position:relative; z-index:1; }}
+.modal-title {{ font-family:'Syne',sans-serif; font-weight:800; font-size:15px; color:#141518; }}
+.modal-close {{ cursor:pointer; font-size:18px; color:#A0A7B4; line-height:1; padding:2px 6px;
+                border-radius:6px; }}
+.modal-close:hover {{ background:#F0F1F4; color:#141518; }}
+.modal-body {{ padding:14px 20px 20px; overflow-y:auto; flex:1; }}
+.day-event-row {{ padding:12px 14px; border:1px solid rgba(0,0,0,.08); border-radius:10px;
+                   margin-bottom:10px; cursor:pointer; transition:border-color .15s, background .15s; }}
+.day-event-row:hover {{ border-color:#E8520A; background:rgba(232,82,10,.04); }}
+.day-event-top {{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+                   margin-bottom:3px; }}
+.day-event-name {{ font-family:'DM Sans',sans-serif; font-weight:700; font-size:13px; color:#141518; }}
+.day-event-sub {{ font-family:'DM Mono',monospace; font-size:10px; color:#6B7280;
+                   letter-spacing:.02em; }}
+.rating-badge {{ display:inline-block; padding:2px 9px; border-radius:999px; flex-shrink:0;
+                  font-family:'DM Mono',monospace; font-size:9px; font-weight:600;
+                  letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }}
+.back-link {{ font-family:'DM Mono',monospace; font-size:11px; color:#E8520A; cursor:pointer;
+              margin-bottom:14px; display:inline-block; text-transform:uppercase; letter-spacing:.06em; }}
+.detail-name {{ font-family:'Syne',sans-serif; font-weight:800; font-size:17px; color:#141518;
+                margin-bottom:10px; line-height:1.3; }}
+.score-row {{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }}
+.score-num {{ font-family:'DM Mono',monospace; font-size:15px; font-weight:600; }}
+.score-num small {{ font-size:10px; color:#A0A7B4; font-weight:400; }}
+.score-bar-track {{ flex:1; height:4px; background:#F0F1F4; border-radius:2px; overflow:hidden; }}
+.score-bar-fill {{ height:4px; border-radius:2px; }}
+.detail-field {{ margin-bottom:12px; }}
+.detail-label {{ font-family:'DM Mono',monospace; font-size:9px; color:#A0A7B4; text-transform:uppercase;
+                  letter-spacing:.1em; margin-bottom:2px; }}
+.detail-value {{ font-family:'DM Sans',sans-serif; font-size:13px; color:#141518; font-weight:500; }}
+.detail-link {{ display:inline-block; margin-top:6px; background:#E8520A; color:#fff !important;
+                 font-family:'Syne',sans-serif; font-weight:700; font-size:11px; letter-spacing:.05em;
+                 text-transform:uppercase; text-decoration:none; padding:10px 18px; border-radius:8px; }}
+.detail-link:hover {{ background:#c94308; }}
+</style></head><body>
+  <div class="cal-wrap">
+    <div class="cal-grid">{day_headers}{cells_html}</div>
+
+    <div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-title">Events</div>
+          <div class="modal-close" onclick="closeModal()">&times;</div>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const EVENTS_BY_DAY = {events_json};
+const MONTH_LABEL   = {json.dumps(month_label)};
+const RATING_COLORS = {{
+  "Blockbuster": {{ bg: "rgba(23,153,72,.12)",  fg: "#0f7035" }},
+  "Strong":      {{ bg: "rgba(232,82,10,.12)",  fg: "#c94308" }},
+  "Moderate":    {{ bg: "rgba(217,119,6,.12)",  fg: "#92400e" }},
+  "Low":         {{ bg: "rgba(220,38,38,.10)",  fg: "#991b1b" }}
+}};
+let currentDay = null;
+
+function esc(s) {{
+  const d = document.createElement('div');
+  d.innerText = (s || '');
+  return d.innerHTML;
+}}
+
+function ratingBadge(rating) {{
+  if (!rating) return '';
+  const c = RATING_COLORS[rating] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+  return '<span class="rating-badge" style="background:' + c.bg + ';color:' + c.fg + ';">' + esc(rating) + '</span>';
+}}
+
+function openDay(day) {{
+  currentDay = day;
+  document.getElementById('modal-title').innerText = 'Events — ' + day + ' ' + MONTH_LABEL;
+  renderDayList(day);
+  document.getElementById('modal-overlay').classList.add('open');
+}}
+
+function closeModal() {{
+  document.getElementById('modal-overlay').classList.remove('open');
+}}
+
+function renderDayList(day) {{
+  const events = EVENTS_BY_DAY[day] || [];
+  let html = '';
+  events.forEach(function(e, idx) {{
+    const sub = [e.time, e.venue, e.city].filter(Boolean).join(' · ');
+    html += '<div class="day-event-row" onclick="showDetail(' + day + ',' + idx + ')">' +
+              '<div class="day-event-top">' +
+                '<div class="day-event-name">' + esc(e.name) + '</div>' +
+                ratingBadge(e.rating) +
+              '</div>' +
+              (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
+            '</div>';
+  }});
+  document.getElementById('modal-body').innerHTML = html;
+}}
+
+function showDetail(day, idx) {{
+  const e = (EVENTS_BY_DAY[day] || [])[idx];
+  if (!e) return;
+  document.getElementById('modal-title').innerText = 'Event Details';
+  let html = '<div class="back-link" onclick="backToDay()">‹ Back to ' + day + ' ' + MONTH_LABEL + '</div>';
+  html += '<div class="detail-name">' + esc(e.name) + '</div>';
+  if (e.score !== null && e.score !== undefined) {{
+    const c = RATING_COLORS[e.rating] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+    html += '<div class="score-row">' +
+              '<div class="score-num" style="color:' + c.fg + ';">' + e.score + '<small>/100</small></div>' +
+              '<div class="score-bar-track"><div class="score-bar-fill" style="width:' + e.score + '%;background:' + c.fg + ';"></div></div>' +
+              ratingBadge(e.rating) +
+            '</div>';
+  }}
+  if (e.venue) html += '<div class="detail-field"><div class="detail-label">Venue</div><div class="detail-value">' + esc(e.venue) + '</div></div>';
+  if (e.city)  html += '<div class="detail-field"><div class="detail-label">City</div><div class="detail-value">' + esc(e.city) + '</div></div>';
+  if (e.type)  html += '<div class="detail-field"><div class="detail-label">Type</div><div class="detail-value">' + esc(e.type) + '</div></div>';
+  if (e.time)  html += '<div class="detail-field"><div class="detail-label">Time</div><div class="detail-value">' + esc(e.time) + '</div></div>';
+  html += '<div class="detail-field"><div class="detail-label">Date</div><div class="detail-value">' + day + ' ' + MONTH_LABEL + '</div></div>';
+  if (e.url) html += '<a class="detail-link" href="' + e.url + '" target="_blank" rel="noopener noreferrer">View Event ↗</a>';
+  document.getElementById('modal-body').innerHTML = html;
+}}
+
+function backToDay() {{
+  document.getElementById('modal-title').innerText = 'Events — ' + currentDay + ' ' + MONTH_LABEL;
+  renderDayList(currentDay);
+}}
+</script>
+</body></html>"""
+
+    components.html(html, height=grid_height, scrolling=False)
+
 
 
 # =====================================================
@@ -1853,10 +2619,23 @@ if find_events:
         st.session_state["_search_lat"]    = lat
         st.session_state["_search_lon"]    = lon
         st.session_state["_search_radius"] = radius
+        st.session_state["_last_search_key"]  = f"{postcode}|{radius}"
         st.session_state["_last_filter_key"] = "|"
+        st.session_state.pop("calendar_year", None)
+        st.session_state.pop("calendar_month", None)
 
         new_events_count = after_total - before_total
         st.session_state["new_events_count"] = new_events_count
+
+        log_search_event(
+            action="fetch_sync",
+            postcode=postcode,
+            radius=radius,
+            lat=lat,
+            lon=lon,
+            results_count=after_radius_count,
+            new_events_count=new_events_count,
+        )
 
         # Fetch the newest events by Created At for the popup
         if new_events_count > 0:
@@ -1919,12 +2698,52 @@ if search_db:
             st.session_state["_search_radius"]    = radius
             st.session_state["_last_search_key"]  = f"{postcode}|{radius}"
             st.session_state["_last_filter_key"]  = "|"
+            st.session_state.pop("calendar_year", None)
+            st.session_state.pop("calendar_month", None)
+
+            log_search_event(
+                action="search",
+                postcode=postcode,
+                radius=radius,
+                lat=lat,
+                lon=lon,
+                results_count=len(rows),
+            )
+
+            try:
+                _search_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
+            except Exception:
+                _search_total = "—"
+
+            _today_date = datetime.now(timezone.utc).date()
+            _week_end   = _today_date + timedelta(days=6)
+            _events_today_radius = _count_in_date_range(st.session_state["search_df"], _today_date, _today_date)
+            _events_week_radius  = _count_in_date_range(st.session_state["search_df"], _today_date, _week_end)
+
+            stats_slot.markdown(
+                _stat_row_search(_events_today_radius, _events_week_radius, len(rows), _search_total, radius),
+                unsafe_allow_html=True
+            )
 
 df    = st.session_state.get("search_df", pd.DataFrame())
 label = st.session_state.get("search_label", "")
 
+# Only show results if Search or Fetch & Sync has actually been pressed for
+# the postcode/radius currently in the inputs — dragging the radius slider
+# or editing the postcode afterward hides the stale results until re-run.
+_results_committed = st.session_state.get("_last_search_key") == f"{postcode}|{radius}"
+if not _results_committed:
+    df = pd.DataFrame()
+    st.session_state["search_df"]     = pd.DataFrame()
+    st.session_state["filtered_df"]   = pd.DataFrame()
+    st.session_state["search_label"]  = ""
+    stats_slot.markdown(
+        _stat_row_initial(_initial_total, _initial_today, _initial_this_week),
+        unsafe_allow_html=True
+    )
+
 # ── Postcode info panel ──
-_pci = st.session_state.get("postcode_info")
+_pci = st.session_state.get("postcode_info") if _results_committed else None
 if _pci:
     def _pci_field(label, value):
         if not value or value == "—":
@@ -2033,7 +2852,7 @@ if not df.empty:
     type_col  = col_lower.get("type")
     venue_col = col_lower.get("venue_name")
 
-    filter_l, filter_r = st.columns(2)
+    filter_l, filter_m, filter_r = st.columns(3)
 
     with filter_l:
         if type_col:
@@ -2043,7 +2862,7 @@ if not df.empty:
         else:
             selected_types = []
 
-    with filter_r:
+    with filter_m:
         if venue_col:
             venue_options   = sorted(df[venue_col].dropna().unique().tolist())
             selected_venues = st.multiselect("Filter by Venue", options=venue_options,
@@ -2051,7 +2870,12 @@ if not df.empty:
         else:
             selected_venues = []
 
-    # Re-query Supabase when filters change
+    with filter_r:
+        _rating_options  = ["Blockbuster", "Strong", "Moderate", "Low"]
+        selected_ratings = st.multiselect("Filter by Rating", options=_rating_options,
+                                          placeholder="All ratings")
+
+    # Re-query Supabase when Type/Venue filters change
     _filter_key = f"{','.join(sorted(selected_types))}|{','.join(sorted(selected_venues))}"
     if _filter_key != st.session_state.get("_last_filter_key"):
         st.session_state["_last_filter_key"] = _filter_key
@@ -2068,47 +2892,195 @@ if not df.empty:
 
     filtered_df = st.session_state.get("filtered_df", df)
 
-    # ── Pagination controls ──
-    if "page_num" not in st.session_state:
+    # Rating is computed client-side (not in Supabase), so filter it locally
+    filtered_df = add_impact_scores(filtered_df)
+    if selected_ratings:
+        filtered_df = filtered_df[filtered_df["Rating"].isin(selected_ratings)]
+
+    # Reset pagination whenever any filter (incl. Rating) changes
+    _local_filter_key = f"{_filter_key}|{','.join(sorted(selected_ratings))}"
+    if _local_filter_key != st.session_state.get("_last_local_filter_key"):
+        st.session_state["_last_local_filter_key"] = _local_filter_key
         st.session_state["page_num"] = 1
-    if "rows_per_page" not in st.session_state:
-        st.session_state["rows_per_page"] = 25
 
-    per_page    = st.session_state["rows_per_page"]
-    total_pages = max(1, -(-len(filtered_df) // per_page))
-    page_num    = max(1, min(st.session_state["page_num"], total_pages))
+    # ── View toggle: subtle pill-style buttons, right-aligned, Calendar shown by default ──
+    if "view_mode" not in st.session_state:
+        st.session_state["view_mode"] = "Calendar"
 
-    ctrl_left, ctrl_mid, ctrl_right = st.columns([2, 6, 2])
+    def _toggle_pill_css(key, active):
+        if active:
+            return f"""<style>
+.st-key-{key} .stButton > button {{
+    background: var(--orange-glow) !important;
+    color: var(--orange) !important;
+    border: 1px solid rgba(232,82,10,.32) !important;
+    box-shadow: none !important;
+    border-radius: 999px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: .07em !important;
+    text-transform: uppercase !important;
+    padding: 7px 16px !important;
+}}
+.st-key-{key} .stButton > button:hover {{
+    background: var(--orange-glow) !important;
+    transform: none !important;
+    box-shadow: none !important;
+}}
+</style>"""
+        return f"""<style>
+.st-key-{key} .stButton > button {{
+    background: transparent !important;
+    color: var(--text-dim) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 999px !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    letter-spacing: .07em !important;
+    text-transform: uppercase !important;
+    padding: 7px 16px !important;
+}}
+.st-key-{key} .stButton > button:hover {{
+    background: var(--surface2) !important;
+    color: var(--text) !important;
+    transform: none !important;
+    box-shadow: none !important;
+}}
+</style>"""
 
-    with ctrl_left:
-        options = [10, 25, 50, 100]
-        new_per = st.selectbox("Rows per page", options=options,
-                               index=options.index(per_page))
-        if new_per != per_page:
-            st.session_state["rows_per_page"] = new_per
-            st.session_state["page_num"]      = 1
-            st.rerun()
+    _cal_active  = st.session_state["view_mode"] == "Calendar"
+    _list_active = st.session_state["view_mode"] == "List"
+    _map_active  = st.session_state["view_mode"] == "Map"
 
-    with ctrl_mid:
-        total_label = f"{len(filtered_df)} events" if len(filtered_df) == len(df) else f"{len(filtered_df)} filtered results"
-        st.markdown(
-            f"<div style='text-align:center;font-family:DM Mono,monospace;font-size:12px;"
-            f"color:#6B7280;padding-top:28px;'>"
-            f"Page {page_num} of {total_pages} &nbsp;·&nbsp; {total_label}"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+    _spacer, _btn_cal, _btn_list, _btn_map = st.columns([5, 1.3, 1.3, 1.3])
+    with _btn_cal:
+        with st.container(key="btn_view_calendar_wrap"):
+            st.markdown(_toggle_pill_css("btn_view_calendar_wrap", _cal_active), unsafe_allow_html=True)
+            if st.button("Calendar", use_container_width=True, key="btn_view_calendar"):
+                st.session_state["view_mode"] = "Calendar"
+                st.rerun()
+    with _btn_list:
+        with st.container(key="btn_view_list_wrap"):
+            st.markdown(_toggle_pill_css("btn_view_list_wrap", _list_active), unsafe_allow_html=True)
+            if st.button("List", use_container_width=True, key="btn_view_list"):
+                st.session_state["view_mode"] = "List"
+                st.rerun()
+    with _btn_map:
+        with st.container(key="btn_view_map_wrap"):
+            st.markdown(_toggle_pill_css("btn_view_map_wrap", _map_active), unsafe_allow_html=True)
+            if st.button("Map", use_container_width=True, key="btn_view_map"):
+                st.session_state["view_mode"] = "Map"
+                st.rerun()
 
-    with ctrl_right:
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        nav_l, nav_r = st.columns(2)
+    view_mode = st.session_state["view_mode"]
+
+    if view_mode == "Map":
+        st.markdown(f"""
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;
+                     padding:60px 32px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.06);">
+          <div style="font-size:32px;margin-bottom:12px;">🗺️</div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;
+                       color:var(--text);margin-bottom:6px;">Map view coming soon</div>
+          <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-dim);">
+            Events will be plotted geographically here in a future update.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    elif view_mode == "List":
+        # ── Pagination controls ──
+        if "page_num" not in st.session_state:
+            st.session_state["page_num"] = 1
+        if "rows_per_page" not in st.session_state:
+            st.session_state["rows_per_page"] = 25
+
+        per_page    = st.session_state["rows_per_page"]
+        total_pages = max(1, -(-len(filtered_df) // per_page))
+        page_num    = max(1, min(st.session_state["page_num"], total_pages))
+
+        ctrl_left, ctrl_mid, ctrl_right = st.columns([2, 6, 2])
+
+        with ctrl_left:
+            options = [10, 25, 50, 100]
+            new_per = st.selectbox("Rows per page", options=options,
+                                   index=options.index(per_page))
+            if new_per != per_page:
+                st.session_state["rows_per_page"] = new_per
+                st.session_state["page_num"]      = 1
+                st.rerun()
+
+        with ctrl_mid:
+            total_label = f"{len(filtered_df)} events" if len(filtered_df) == len(df) else f"{len(filtered_df)} filtered results"
+            st.markdown(
+                f"<div style='text-align:center;font-family:DM Mono,monospace;font-size:12px;"
+                f"color:#6B7280;padding-top:28px;'>"
+                f"Page {page_num} of {total_pages} &nbsp;·&nbsp; {total_label}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        with ctrl_right:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            nav_l, nav_r = st.columns(2)
+            with nav_l:
+                if st.button("‹ Prev", disabled=(page_num <= 1), use_container_width=True):
+                    st.session_state["page_num"] = page_num - 1
+                    st.rerun()
+            with nav_r:
+                if st.button("Next ›", disabled=(page_num >= total_pages), use_container_width=True):
+                    st.session_state["page_num"] = page_num + 1
+                    st.rerun()
+
+        render_table(filtered_df, page=st.session_state["page_num"], per_page=per_page)
+
+    else:
+        # ── Calendar view ──
+        col_lower = {c.lower(): c for c in filtered_df.columns}
+        date_col  = col_lower.get("event_date") or col_lower.get("date") or col_lower.get("eventdate")
+
+        valid_dates = []
+        if date_col:
+            valid_dates = [d for d in filtered_df[date_col].apply(_parse_date_safe) if d is not None]
+
+        if "calendar_year" not in st.session_state or "calendar_month" not in st.session_state:
+            if valid_dates:
+                _min_date = min(valid_dates)
+                st.session_state["calendar_year"]  = _min_date.year
+                st.session_state["calendar_month"] = _min_date.month
+            else:
+                _today = datetime.now(timezone.utc).date()
+                st.session_state["calendar_year"]  = _today.year
+                st.session_state["calendar_month"] = _today.month
+
+        cal_year  = st.session_state["calendar_year"]
+        cal_month = st.session_state["calendar_month"]
+
+        nav_l, nav_mid, nav_r = st.columns([1, 4, 1])
         with nav_l:
-            if st.button("‹ Prev", disabled=(page_num <= 1), use_container_width=True):
-                st.session_state["page_num"] = page_num - 1
+            if st.button("‹ Prev month", use_container_width=True):
+                new_month, new_year = cal_month - 1, cal_year
+                if new_month < 1:
+                    new_month, new_year = 12, new_year - 1
+                st.session_state["calendar_year"]  = new_year
+                st.session_state["calendar_month"] = new_month
                 st.rerun()
+        with nav_mid:
+            st.markdown(
+                f"<div style='text-align:center;font-family:Syne,sans-serif;font-weight:800;"
+                f"font-size:18px;padding-top:6px;color:#141518;'>"
+                f"{calendar.month_name[cal_month]} {cal_year}</div>",
+                unsafe_allow_html=True,
+            )
         with nav_r:
-            if st.button("Next ›", disabled=(page_num >= total_pages), use_container_width=True):
-                st.session_state["page_num"] = page_num + 1
+            if st.button("Next month ›", use_container_width=True):
+                new_month, new_year = cal_month + 1, cal_year
+                if new_month > 12:
+                    new_month, new_year = 1, new_year + 1
+                st.session_state["calendar_year"]  = new_year
+                st.session_state["calendar_month"] = new_month
                 st.rerun()
 
-    render_table(filtered_df, page=st.session_state["page_num"], per_page=per_page)
+        render_calendar(filtered_df, cal_year, cal_month)
