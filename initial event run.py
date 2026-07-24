@@ -5,6 +5,9 @@ import pandas as pd
 import hashlib
 import calendar
 import json
+import math
+import re
+import urllib.parse
 from PIL import Image
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
@@ -294,6 +297,13 @@ h3 {
     flex-wrap: wrap;
     gap: 12px;
     overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: left .2s ease, opacity .2s ease;
+}
+.burdy-footer.visible {
+    opacity: 1;
+    pointer-events: auto;
 }
 .burdy-footer::before {
     content: '';
@@ -326,6 +336,35 @@ a.footer-badge:hover {
     border-color: var(--orange);
     background: var(--orange-glow);
     color: var(--orange) !important;
+}
+
+/* ── When the sidebar is open, the footer has less horizontal room —
+      shrink everything so the badges stay on one row instead of wrapping
+      onto a second line and growing the footer's height. Toggled via JS
+      (the same script that repositions the header/footer) rather than a
+      media query, since this depends on sidebar state, not viewport size. ── */
+.burdy-footer.sidebar-open {
+    padding-left: 1.25rem !important;
+    padding-right: 1.25rem !important;
+    gap: 8px !important;
+}
+.burdy-footer.sidebar-open .footer-copy {
+    font-size: 9.5px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+}
+.burdy-footer.sidebar-open .footer-badges {
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+}
+.burdy-footer.sidebar-open .footer-badge {
+    padding: 3px 6px !important;
+    font-size: 8px !important;
+    letter-spacing: .04em !important;
 }
 
 @media (max-width: 768px) {
@@ -583,15 +622,19 @@ components.html("""
         };
 
         toggle.onclick = function() {
-            var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
-                     || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
-                     || p.querySelector('[data-testid="stSidebarCollapseButton"]')
-                     || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
-            if (stBtn) stBtn.click();
+            toggleSidebar();
         };
 
         p.body.appendChild(toggle);
         return toggle;
+    }
+
+    function toggleSidebar() {
+        var stBtn = p.querySelector('[data-testid="stSidebarCollapseButton"] button')
+                 || p.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                 || p.querySelector('[data-testid="stSidebarCollapseButton"]')
+                 || p.querySelector('[data-testid="stSidebarCollapsedControl"]');
+        if (stBtn) stBtn.click();
     }
 
     function positionToggle() {
@@ -601,19 +644,69 @@ components.html("""
         var isCollapsed = sidebarRight < 10;
         toggle.style.left = (isCollapsed ? 0 : sidebarRight) + 'px';
         toggle.innerHTML  = isCollapsed ? '&#10095;' : '&#10094;';
+
+        // The header is position:fixed spanning the full viewport, but the
+        // sidebar sits above it (higher z-index) — without this it just
+        // gets covered on the left whenever the sidebar is open. Shifting
+        // left to match the sidebar's actual right edge, with the CSS
+        // `right: 0` left untouched, lets the header's own width recalculate
+        // to fill exactly the remaining space rather than being hidden.
+        var header = p.querySelector('.burdy-header');
+        if (header) header.style.left = (isCollapsed ? 0 : sidebarRight) + 'px';
+
+        // Same mechanism for the footer.
+        var footer = p.querySelector('.burdy-footer');
+        if (footer) {
+            footer.style.left = (isCollapsed ? 0 : sidebarRight) + 'px';
+            footer.classList.toggle('sidebar-open', !isCollapsed);
+        }
+    }
+
+    function bindLogoClick() {
+        // st.markdown-rendered HTML strips inline onclick handlers even with
+        // unsafe_allow_html=True — only components.html (this script) runs
+        // unsanitized JS, so the click listener has to be attached from here
+        // rather than as an onclick attribute in the header markup. The
+        // logo element gets re-created on every Streamlit rerun, so this
+        // runs on the same polling loop as positionToggle and uses a data
+        // attribute to avoid stacking duplicate listeners on the same node.
+        var logo = p.querySelector('.burdy-logo');
+        if (logo && !logo.dataset.clickBound) {
+            logo.style.cursor = 'pointer';
+            logo.addEventListener('click', toggleSidebar);
+            logo.dataset.clickBound = '1';
+        }
+    }
+
+    function checkFooterVisibility() {
+        var footer = p.querySelector('.burdy-footer');
+        if (!footer) return;
+        var win = p.defaultView || window.parent;
+        var scrollY    = win.scrollY || p.documentElement.scrollTop || 0;
+        var winHeight  = win.innerHeight || p.documentElement.clientHeight || 0;
+        var docHeight  = p.documentElement.scrollHeight || 0;
+        var nearBottom = (docHeight - scrollY - winHeight) < 120;
+        footer.classList.toggle('visible', nearBottom);
     }
 
     positionToggle();
-    setInterval(positionToggle, 100);
+    bindLogoClick();
+    checkFooterVisibility();
+    setInterval(function() { positionToggle(); bindLogoClick(); checkFooterVisibility(); }, 100);
     try {
-        new MutationObserver(positionToggle).observe(p.body, {
+        new MutationObserver(function() { positionToggle(); bindLogoClick(); }).observe(p.body, {
             attributes: true, subtree: true,
             attributeFilter: ['style', 'class']
         });
     } catch(e) {}
+    try {
+        var scrollWin = p.defaultView || window.parent;
+        scrollWin.addEventListener('scroll', checkFooterVisibility, { passive: true });
+    } catch(e) {}
 })();
 </script>
 """, height=1)
+
 
 # =====================================================
 # CONFIG
@@ -621,6 +714,7 @@ components.html("""
 
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 SKIDDLE_API_KEY      = st.secrets["SKIDDLE_API_KEY"]
+NH_API_KEY           = st.secrets.get("NH_API_KEY", "")
 SUPABASE_URL         = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY         = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 BIRD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Bird%20Logo%20Left.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0JpcmQgTG9nbyBMZWZ0LnBuZyIsImlhdCI6MTc4MDU5ODM2NSwiZXhwIjoxODEyMTM0MzY1fQ.OMa5cbOtPSUZR4JTjlT3Mm1XBZlgi2rugZOQx7SLCX0"
@@ -629,6 +723,7 @@ WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/obje
 TM_BASE_URL      = "https://app.ticketmaster.com/discovery/v2/events.json"
 SKIDDLE_URL      = "https://www.skiddle.com/api/v1/events/search/"
 POSTCODE_API     = "https://api.postcodes.io/postcodes/{}"
+NH_BASE_URL      = "https://api.data.nationalhighways.co.uk/roads/v2.0/closures"
 
 WINDOW_DAYS      = 30
 MONTHS_AHEAD     = 24
@@ -636,6 +731,10 @@ TM_MAX_PAGES     = 5
 TM_PAGE_SIZE     = 200
 SK_MAX_PAGES     = 10
 SK_PAGE_SIZE     = 100
+
+ROADWORKS_TABLE       = "road_closures"
+ROADWORKS_DAYS_AHEAD  = 30   # planned closures: how far ahead to query
+ROADWORKS_HOURS_BACK  = 6    # unplanned closures: how far back to query
 
 SKIDDLE_ONLY     = {"Genres", "Artists", "Distance", "Min Age", "Tickets URL", "source"}
 
@@ -698,6 +797,7 @@ st.markdown(f"""
     display: flex;
     align-items: center;
     justify-content: space-between;
+    transition: left .2s ease;
 }}
 .burdy-header::after {{
     content: '';
@@ -728,7 +828,7 @@ st.markdown(f"""
 </style>
 
 <div class="burdy-header">
-  <div class="burdy-logo">
+  <div class="burdy-logo" style="cursor:pointer;">
     <img src="{BIRD_LOGO_URL}" height="80" style="display:block;" />
     <img src="{WORD_LOGO_URL}" height="150" style="display:block;" />
   </div>
@@ -1610,6 +1710,90 @@ def get_location(postcode_input):
     return r["latitude"], r["longitude"], info
 
 
+# WMO weather codes (used by Open-Meteo) collapsed down to a small icon set —
+# see https://open-meteo.com/en/docs for the full code table.
+_WEATHER_ICONS = {
+    0: "☀️", 1: "🌤️", 2: "⛅", 3: "☁️",
+    45: "🌫️", 48: "🌫️",
+    51: "🌦️", 53: "🌦️", 55: "🌦️",
+    56: "🌧️", 57: "🌧️",
+    61: "🌧️", 63: "🌧️", 65: "🌧️",
+    66: "🌧️", 67: "🌧️",
+    71: "🌨️", 73: "🌨️", 75: "🌨️", 77: "🌨️",
+    80: "🌦️", 81: "🌧️", 82: "⛈️",
+    85: "🌨️", 86: "🌨️",
+    95: "⛈️", 96: "⛈️", 99: "⛈️",
+}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fetch_weather_forecast_cached(lat, lon):
+    """Does the actual Open-Meteo call. Raises on failure rather than
+    swallowing the error, so a transient failure never gets cached as
+    "no weather" for the full TTL — st.cache_data only stores a value that
+    was successfully returned, not one that was raised."""
+    resp = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude":  round(lat, 2),
+            "longitude": round(lon, 2),
+            "daily":     "weathercode,temperature_2m_max,temperature_2m_min",
+            "hourly":    "temperature_2m,weathercode",
+            "timezone":  "auto",
+            "forecast_days": 16,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+
+    daily  = payload.get("daily", {})
+    dates  = daily.get("time", [])
+    codes  = daily.get("weathercode", [])
+    tmaxes = daily.get("temperature_2m_max", [])
+    tmins  = daily.get("temperature_2m_min", [])
+
+    # A handful of evenly-spaced points through the day, rather than all 24
+    # hours — enough to show a shape (morning/midday/evening/overnight)
+    # without cluttering a small modal.
+    TARGET_HOURS = {"00", "06", "12", "18"}
+    hourly = payload.get("hourly", {})
+    hourly_by_date = {}
+    for t, code, temp in zip(hourly.get("time", []), hourly.get("weathercode", []), hourly.get("temperature_2m", [])):
+        date_part, _, time_part = t.partition("T")
+        hh = time_part[:2]
+        if hh not in TARGET_HOURS:
+            continue
+        hourly_by_date.setdefault(date_part, []).append({
+            "time": f"{hh}:00",
+            "icon": _WEATHER_ICONS.get(code, "🌡️"),
+            "temp": round(temp) if temp is not None else None,
+        })
+
+    return {
+        date: {
+            "icon":   _WEATHER_ICONS.get(code, "🌡️"),
+            "tmax":   round(tmax) if tmax is not None else None,
+            "tmin":   round(tmin) if tmin is not None else None,
+            "hourly": hourly_by_date.get(date, []),
+        }
+        for date, code, tmax, tmin in zip(dates, codes, tmaxes, tmins)
+    }
+
+
+def fetch_weather_forecast(lat, lon):
+    """Open-Meteo daily forecast (free, no API key) — returns a dict keyed by
+    'YYYY-MM-DD' with icon/tmax/tmin, for whatever days the API covers
+    (typically today + the next ~15 days). The underlying call is cached for
+    30 min per lat/lon; failures are handled here, outside the cache, so a
+    one-off failure doesn't get "stuck" for the whole TTL."""
+    try:
+        return _fetch_weather_forecast_cached(lat, lon)
+    except Exception as e:
+        st.caption(f"⚠ Weather forecast unavailable right now ({e})")
+        return {}
+
+
 def upsert_batch(events_dict, strip_keys=None):
     """Upsert a dict of events, preserving first_seen_at / Created At on existing rows."""
     strip_keys = strip_keys or set()
@@ -1979,9 +2163,35 @@ def add_impact_scores(df):
     return df
 
 
+def build_roadworks_list_rows(roadworks_df):
+    """Map road_closures rows onto the same display columns used for events
+    (Name / Venue Name / Date / Type / City / Impact Score / Rating), so
+    roadworks entries can be merged straight into the events List-view table."""
+    if roadworks_df is None or roadworks_df.empty:
+        return pd.DataFrame()
+
+    def _row(r):
+        start_date = str(r.get("start_time") or "")[:10]
+        ctype      = r.get("closure_type") or "planned"
+        return {
+            "Name":         r.get("road") or "Unknown road",
+            "Venue Name":   r.get("location") or "—",
+            "Date":         start_date,
+            "Type":         f"Roadworks ({ctype})",
+            "City":         "",
+            "Impact Score": "",
+            "Rating":       "Roadworks",
+        }
+
+    return pd.DataFrame([_row(r) for _, r in roadworks_df.iterrows()])
+
+
 def render_rows(data_df):
-    # Add impact scores before rendering
-    data_df = add_impact_scores(data_df)
+    # Add impact scores before rendering — but only if they aren't already present,
+    # so rows that already carry a fixed value (e.g. roadworks rows merged into the
+    # list, tagged "Roadworks" rather than scored) don't get overwritten.
+    if "Impact Score" not in data_df.columns or "Rating" not in data_df.columns:
+        data_df = add_impact_scores(data_df)
 
     cols = list(data_df.columns)
 
@@ -2005,6 +2215,7 @@ def render_rows(data_df):
         "Strong":      ("rgba(232,82,10,.12)",  "#c94308"),
         "Moderate":    ("rgba(217,119,6,.12)",  "#92400e"),
         "Low":         ("rgba(220,38,38,.10)",  "#991b1b"),
+        "Roadworks":   ("rgba(0,69,124,.10)",   "#00457c"),
     }
 
     headers = "".join(
@@ -2020,19 +2231,28 @@ def render_rows(data_df):
             val = row[col] if pd.notna(row[col]) else ""
 
             if col == score_col:
-                # Render as a number with mini progress bar
-                score_int = int(val) if val != "" else 0
-                bar_color = score_label(score_int)[1]
-                cell = (
-                    f"<td style='padding:8px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
-                    f"background:#fff;white-space:nowrap;min-width:90px;'>"
-                    f"<div style='font-family:DM Mono,monospace;font-size:13px;font-weight:600;"
-                    f"color:{bar_color};margin-bottom:4px;'>{score_int}<span style='font-size:10px;"
-                    f"color:#A0A7B4;font-weight:400;'>/100</span></div>"
-                    f"<div style='height:3px;background:#F0F1F4;border-radius:2px;'>"
-                    f"<div style='width:{score_int}%;height:3px;background:{bar_color};"
-                    f"border-radius:2px;'></div></div></td>"
-                )
+                if val == "":
+                    # No Impact Score applies (e.g. roadworks rows) — plain dash, no bar
+                    cell = (
+                        f"<td style='padding:8px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                        f"background:#fff;white-space:nowrap;min-width:90px;'>"
+                        f"<div style='font-family:DM Mono,monospace;font-size:13px;"
+                        f"color:#A0A7B4;'>—</div></td>"
+                    )
+                else:
+                    # Render as a number with mini progress bar
+                    score_int = int(val)
+                    bar_color = score_label(score_int)[1]
+                    cell = (
+                        f"<td style='padding:8px 14px;border-bottom:1px solid rgba(0,0,0,.06);"
+                        f"background:#fff;white-space:nowrap;min-width:90px;'>"
+                        f"<div style='font-family:DM Mono,monospace;font-size:13px;font-weight:600;"
+                        f"color:{bar_color};margin-bottom:4px;'>{score_int}<span style='font-size:10px;"
+                        f"color:#A0A7B4;font-weight:400;'>/100</span></div>"
+                        f"<div style='height:3px;background:#F0F1F4;border-radius:2px;'>"
+                        f"<div style='width:{score_int}%;height:3px;background:{bar_color};"
+                        f"border-radius:2px;'></div></div></td>"
+                    )
 
             elif col == rating_col:
                 # Render as a pill badge
@@ -2100,10 +2320,19 @@ table {{ width:100%; min-width:640px; border-collapse:collapse; background:#fff;
     return total_pages, page
 
 
-def render_calendar(df, year, month):
+def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None):
     """Render a month-grid calendar view of events, grouped by their event_date.
     Days are clickable to show the full list of events; each event is clickable
-    for more detail (venue, type, city, time, Impact Score/Rating, and a link if available)."""
+    for more detail (venue, type, city, time, Impact Score/Rating, and a link if available).
+    roadworks_df (optional) is bucketed by day the same way and linked to the
+    "Roadworks" stat box in each day cell. lat/lon (optional) enable the
+    "Weather" stat box via Open-Meteo — days outside the forecast's ~16-day
+    window (past days, or far-future months) just show no data, same as the
+    Holidays/Other placeholders. all_events_df (optional) is a separate,
+    all-time (incl. historical) fetch used ONLY to get accurate Events counts
+    for days that have already passed — df itself only ever contains
+    current/future events (search_within_radius filters out anything before
+    "now" server-side), so past days would otherwise always show 0."""
     df = add_impact_scores(df)
 
     col_lower  = {c.lower(): c for c in df.columns}
@@ -2142,6 +2371,64 @@ def render_calendar(df, year, month):
     for _events in events_by_day.values():
         _events.sort(key=lambda e: e["score"] if e["score"] is not None else -1, reverse=True)
 
+    # Past-day Events counts: df above only ever contains current/future
+    # events, so we use the separate all-time fetch here just for a count —
+    # past days aren't clickable, so there's no need to build full entries.
+    past_events_count_by_day = {}
+    if all_events_df is not None and not all_events_df.empty:
+        _ae_col_lower = {c.lower(): c for c in all_events_df.columns}
+        _ae_date_col  = _ae_col_lower.get("event_date") or _ae_col_lower.get("date") or _ae_col_lower.get("eventdate")
+        if _ae_date_col:
+            for _, _row in all_events_df.iterrows():
+                _d = _parse_date_safe(_row[_ae_date_col])
+                if _d is None or _d.year != year or _d.month != month:
+                    continue
+                past_events_count_by_day[_d.day] = past_events_count_by_day.get(_d.day, 0) + 1
+
+    # ── Roadworks, bucketed by day the same way events are ──
+    # Linked only to their start_time day (not spanned across every day through
+    # end_time) — spanning caused the same closure to appear to "duplicate"
+    # across adjacent days whenever a re-published record's start_time shifted
+    # slightly, since each version would separately span into the other's day.
+    month_first = datetime(year, month, 1).date()
+    month_last  = month_first.replace(day=calendar.monthrange(year, month)[1])
+
+    roadworks_by_day = {}
+    if roadworks_df is not None and not roadworks_df.empty:
+        for _, rw in roadworks_df.iterrows():
+            start_d = _parse_date_safe(rw.get("start_time"))
+            if start_d is None or start_d < month_first or start_d > month_last:
+                continue
+            entry = {
+                "road":         rw.get("road") or "Unknown road",
+                "location":     rw.get("location") or "",
+                "status":       rw.get("status") or "",
+                "closure_type": rw.get("closure_type") or "planned",
+                "cause":        rw.get("cause") or "",
+                "comment":      rw.get("comment") or "",
+                "start_time":   rw.get("start_time") or "",
+                "end_time":     rw.get("end_time") or "",
+            }
+            roadworks_by_day.setdefault(start_d.day, []).append(entry)
+
+    weather_by_day = {}
+    if lat is not None and lon is not None:
+        forecast = fetch_weather_forecast(lat, lon)
+        for date_str, info in forecast.items():
+            d = _parse_date_safe(date_str)
+            if d is not None and d.year == year and d.month == month:
+                weather_by_day[d.day] = info
+
+    # Only present for days Open-Meteo actually returned data for (its
+    # forecast window, typically today + ~15 days) — days outside that
+    # range simply won't have a key here, which the modal uses to decide
+    # whether to show the interval strip at all.
+    weather_hourly_by_day = {
+        day: info.get("hourly", [])
+        for day, info in weather_by_day.items()
+        if info.get("hourly")
+    }
+
     cal_obj = calendar.Calendar(firstweekday=0)  # Monday start
     weeks   = cal_obj.monthdayscalendar(year, month)
     today   = datetime.now(timezone.utc).date()
@@ -2159,39 +2446,78 @@ def render_calendar(df, year, month):
     )
 
     cells_html = ""
+    events_count_by_day = {}
+    is_past_by_day = {}
     for week in weeks:
         for day in week:
             if day == 0:
                 cells_html += "<div class='cal-cell cal-empty'></div>"
                 continue
             day_events = events_by_day.get(day, [])
+            day_rw     = roadworks_by_day.get(day, [])
             is_today   = (day == today.day and month == today.month and year == today.year)
-            badge      = f"<span class='cal-count'>{len(day_events)}</span>" if day_events else ""
-            items_html = ""
-            for e in day_events[:3]:
-                title_esc = (e["name"] + (f" — {e['venue']}" if e["venue"] else "")).replace('"', "&quot;")
-                dot_color = _RATING_COLORS.get(e["rating"], "#A0A7B4")
-                items_html += (
-                    f"<div class='cal-event' title=\"{title_esc}\">"
-                    f"<span class='cal-event-dot' style='background:{dot_color};'></span>"
-                    f"{e['name'][:20]}</div>"
-                )
-            if len(day_events) > 3:
-                items_html += f"<div class='cal-more'>+{len(day_events) - 3} more</div>"
-            clickable  = " cal-clickable" if day_events else ""
-            cell_class = "cal-cell" + (" cal-today" if is_today else "") + clickable
-            onclick    = f' onclick="openDay({day})"' if day_events else ""
-            cell_style = ' style="cursor:pointer;"' if day_events else ""
-            cells_html += f"""<div class="{cell_class}"{onclick}{cell_style}>
-                <div class="cal-daynum">{day}{badge}</div>
-                <div class="cal-events">{items_html}</div>
+            is_past    = datetime(year, month, day).date() < today
+
+            n_events   = past_events_count_by_day.get(day, 0) if is_past else len(day_events)
+            events_count_by_day[day] = n_events
+            is_past_by_day[day] = is_past
+            events_num_class = "cal-stat-num" if n_events else "cal-stat-num cal-stat-empty"
+            events_val = str(n_events) if n_events else "0"
+            # Counts still reflect what's in Supabase regardless of date — only
+            # the click affordance is gated off for days that have already passed.
+            events_onclick = f' onclick="event.stopPropagation(); openDay({day})"' if day_events and not is_past else ""
+            events_style   = ' style="cursor:pointer;"' if day_events and not is_past else ""
+
+            n_rw = len(day_rw)
+            rw_num_class = "cal-stat-num" if n_rw else "cal-stat-num cal-stat-empty"
+            rw_val       = str(n_rw) if n_rw else "–"
+            rw_onclick   = f' onclick="event.stopPropagation(); openDayRoadworks({day})"' if n_rw and not is_past else ""
+            rw_style     = ' style="cursor:pointer;"' if n_rw and not is_past else ""
+
+            wx = weather_by_day.get(day)
+            wx_html = ""
+            if wx and wx.get("tmax") is not None:
+                wx_html = f'<span class="cal-daynum-wx">{wx["icon"]} {wx["tmax"]}°</span>'
+
+            stats_html = f"""<div class="cal-stat-grid">
+                <div class="cal-stat-box cal-stat-events"{events_onclick}{events_style}>
+                    <div class="{events_num_class}">{events_val}</div>
+                    <div class="cal-stat-label">Events</div>
+                </div>
+                <div class="cal-stat-box cal-stat-holidays">
+                    <div class="cal-stat-num cal-stat-empty">–</div>
+                    <div class="cal-stat-label">Holidays</div>
+                </div>
+                <div class="cal-stat-box cal-stat-roadworks"{rw_onclick}{rw_style}>
+                    <div class="{rw_num_class}">{rw_val}</div>
+                    <div class="cal-stat-label">Travel</div>
+                </div>
+                <div class="cal-stat-box cal-stat-other">
+                    <div class="cal-stat-num cal-stat-empty">–</div>
+                    <div class="cal-stat-label">Other</div>
+                </div>
+            </div>"""
+
+            # Clicking the day cell itself (anywhere other than the Events or
+            # Travel boxes, which stop their own click from bubbling up here)
+            # opens a lightweight day-summary placeholder — not the full
+            # events list, which is reserved for clicking the Events box
+            # specifically.
+            cell_class = "cal-cell" + (" cal-today" if is_today else "") + " cal-clickable"
+            cells_html += f"""<div class="{cell_class}" onclick="openDaySummary({day})" style="cursor:pointer;">
+                <div class="cal-daynum">{day}{wx_html}</div>
+                <div class="cal-events">{stats_html}</div>
             </div>"""
 
     n_weeks      = len(weeks)
-    grid_height  = 46 + (n_weeks * 108) + 20
+    grid_height  = 46 + (n_weeks * 116) + 20
 
-    events_json = json.dumps(events_by_day).replace("</", "<\\/")
-    month_label = f"{calendar.month_name[month]} {year}"
+    events_json       = json.dumps(events_by_day).replace("</", "<\\/")
+    roadworks_json    = json.dumps(roadworks_by_day).replace("</", "<\\/")
+    events_count_json = json.dumps(events_count_by_day).replace("</", "<\\/")
+    is_past_json      = json.dumps(is_past_by_day).replace("</", "<\\/")
+    weather_hourly_json = json.dumps(weather_hourly_by_day).replace("</", "<\\/")
+    month_label       = f"{calendar.month_name[month]} {year}"
 
     html = f"""<!DOCTYPE html><html><head>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
@@ -2204,14 +2530,14 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .cal-head {{ padding:10px 8px; font-family:'DM Mono',monospace; font-size:11px; color:#6B7280;
              text-transform:uppercase; letter-spacing:.08em; text-align:center;
              background:#F4F5F7; border-bottom:1px solid rgba(0,0,0,.09); }}
-.cal-cell {{ min-height:100px; border-right:1px solid rgba(0,0,0,.06); border-bottom:1px solid rgba(0,0,0,.06);
+.cal-cell {{ min-height:108px; border-right:1px solid rgba(0,0,0,.06); border-bottom:1px solid rgba(0,0,0,.06);
              padding:6px; position:relative; }}
 .cal-empty {{ background:#FAFAFB; }}
 .cal-today {{ background:rgba(232,82,10,.05); }}
 .cal-clickable {{ cursor:pointer; transition:background .15s; }}
 .cal-clickable:hover {{ background:rgba(232,82,10,.06); }}
 .cal-daynum {{ font-family:'Syne',sans-serif; font-weight:700; font-size:13px; color:#141518;
-               display:flex; align-items:center; gap:6px; margin-bottom:4px; }}
+               display:flex; align-items:center; gap:6px; margin-bottom:5px; }}
 .cal-count {{ background:#E8520A; color:#fff; font-family:'DM Mono',monospace; font-size:9px;
               padding:1px 6px; border-radius:999px; }}
 .cal-event {{ font-size:10px; color:#141518; background:#F4F5F7; border-radius:4px;
@@ -2219,6 +2545,27 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
               display:flex; align-items:center; gap:4px; }}
 .cal-event-dot {{ width:6px; height:6px; border-radius:50%; flex-shrink:0; }}
 .cal-more {{ font-size:9px; color:#A0A7B4; font-family:'DM Mono',monospace; }}
+
+.cal-stat-grid {{ display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;
+                   gap:3px; height:70px; }}
+.cal-stat-box {{ background:#F4F5F7; border-radius:5px; display:flex; flex-direction:column;
+                  align-items:center; justify-content:center; padding:2px; text-align:center;
+                  overflow:hidden; }}
+.cal-stat-num {{ font-family:'Syne',sans-serif; font-weight:800; font-size:13px; color:#141518;
+                  line-height:1.1; }}
+.cal-stat-num.cal-stat-empty {{ color:#C7CBD3; font-weight:600; }}
+.cal-stat-label {{ font-family:'DM Mono',monospace; font-size:7px; color:#6B7280;
+                    text-transform:uppercase; letter-spacing:.02em; margin-top:1px; white-space:nowrap; }}
+.cal-stat-events {{ background:var(--orange-glow, rgba(232,82,10,.1)); }}
+.cal-stat-events .cal-stat-num:not(.cal-stat-empty) {{ color:#E8520A; }}
+.cal-stat-holidays .cal-stat-num:not(.cal-stat-empty) {{ color:#179948; }}
+.cal-stat-roadworks .cal-stat-num:not(.cal-stat-empty) {{ color:#00457c; }}
+.cal-daynum-wx {{ font-family:'DM Mono',monospace; font-weight:500; font-size:10px; color:#0284c7;
+                   margin-left:auto; white-space:nowrap; }}
+.cal-stat-roadworks[style*="cursor:pointer"] {{ background:rgba(0,69,124,.10); transition:background .15s; }}
+.cal-stat-roadworks[style*="cursor:pointer"]:hover {{ background:rgba(0,69,124,.18); }}
+.cal-stat-events[style*="cursor:pointer"] {{ transition:background .15s; }}
+.cal-stat-events[style*="cursor:pointer"]:hover {{ background:rgba(232,82,10,.22); }}
 
 /* ── Modal ── */
 .modal-overlay {{ display:none; position:absolute; inset:0; background:rgba(20,21,24,.55);
@@ -2243,6 +2590,8 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .day-event-top {{ display:flex; align-items:center; justify-content:space-between; gap:8px;
                    margin-bottom:3px; }}
 .day-event-name {{ font-family:'DM Sans',sans-serif; font-weight:700; font-size:13px; color:#141518; }}
+.day-event-window {{ font-family:'DM Mono',monospace; font-weight:500; font-size:10px; color:#6B7280;
+                      margin-left:7px; white-space:nowrap; }}
 .day-event-sub {{ font-family:'DM Mono',monospace; font-size:10px; color:#6B7280;
                    letter-spacing:.02em; }}
 .rating-badge {{ display:inline-block; padding:2px 9px; border-radius:999px; flex-shrink:0;
@@ -2283,15 +2632,24 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
   </div>
 
 <script>
-const EVENTS_BY_DAY = {events_json};
-const MONTH_LABEL   = {json.dumps(month_label)};
+const EVENTS_BY_DAY       = {events_json};
+const ROADWORKS_BY_DAY    = {roadworks_json};
+const EVENTS_COUNT_BY_DAY = {events_count_json};
+const IS_PAST_BY_DAY      = {is_past_json};
+const WEATHER_HOURLY_BY_DAY = {weather_hourly_json};
+const MONTH_LABEL      = {json.dumps(month_label)};
 const RATING_COLORS = {{
   "Blockbuster": {{ bg: "rgba(23,153,72,.12)",  fg: "#0f7035" }},
   "Strong":      {{ bg: "rgba(232,82,10,.12)",  fg: "#c94308" }},
   "Moderate":    {{ bg: "rgba(217,119,6,.12)",  fg: "#92400e" }},
   "Low":         {{ bg: "rgba(220,38,38,.10)",  fg: "#991b1b" }}
 }};
-let currentDay = null;
+const CLOSURE_COLORS = {{
+  "planned":   {{ bg: "rgba(217,119,6,.12)", fg: "#92400e" }},
+  "unplanned": {{ bg: "rgba(220,38,38,.10)", fg: "#991b1b" }}
+}};
+let currentDay  = null;
+let currentMode = 'events';   // 'events' | 'roadworks'
 
 function esc(s) {{
   const d = document.createElement('div');
@@ -2305,10 +2663,77 @@ function ratingBadge(rating) {{
   return '<span class="rating-badge" style="background:' + c.bg + ';color:' + c.fg + ';">' + esc(rating) + '</span>';
 }}
 
+function closureBadge(ctype) {{
+  const c = CLOSURE_COLORS[ctype] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+  return '<span class="rating-badge" style="background:' + c.bg + ';color:' + c.fg + ';">' + esc(ctype) + '</span>';
+}}
+
 function openDay(day) {{
-  currentDay = day;
+  currentMode = 'events';
+  currentDay  = day;
   document.getElementById('modal-title').innerText = 'Events — ' + day + ' ' + MONTH_LABEL;
   renderDayList(day);
+  document.getElementById('modal-overlay').classList.add('open');
+}}
+
+function openDayRoadworks(day) {{
+  currentMode = 'roadworks';
+  currentDay  = day;
+  document.getElementById('modal-title').innerText = 'Travel — ' + day + ' ' + MONTH_LABEL;
+  renderRoadworksList(day);
+  document.getElementById('modal-overlay').classList.add('open');
+}}
+
+function openDaySummary(day) {{
+  // Lightweight placeholder overview for clicking the day cell itself —
+  // distinct from openDay/openDayRoadworks, which show the full lists and
+  // are only reachable by clicking the Events or Travel boxes specifically.
+  currentMode = 'summary';
+  currentDay  = day;
+  const nEvents = EVENTS_COUNT_BY_DAY[day] || 0;
+  const nTravel = (ROADWORKS_BY_DAY[day] || []).length;
+  const isPast  = !!IS_PAST_BY_DAY[day];
+  const hourly  = WEATHER_HOURLY_BY_DAY[day] || [];
+  document.getElementById('modal-title').innerText = day + ' ' + MONTH_LABEL;
+  let hint;
+  if (nEvents === 0) {{
+    hint = 'Nothing on the books for this day yet.';
+  }} else if (isPast) {{
+    hint = 'This day has passed — the full list is no longer available to open.';
+  }} else {{
+    hint = 'Click Events above for the full list.';
+  }}
+  let weatherHtml = '';
+  if (hourly.length) {{
+    weatherHtml =
+      '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#A0A7B4; text-transform:uppercase; letter-spacing:.05em; margin:12px 0 6px;">Through the day</div>' +
+      '<div style="display:flex; gap:6px;">' +
+        hourly.map(function(h) {{
+          return '<div style="flex:1; background:#F4F5F7; border-radius:8px; padding:8px 4px; text-align:center;">' +
+            '<div style="font-family:\\'DM Mono\\',monospace; font-size:8px; color:#A0A7B4;">' + esc(h.time) + '</div>' +
+            '<div style="font-size:15px; margin:3px 0;">' + h.icon + '</div>' +
+            '<div style="font-family:\\'DM Sans\\',sans-serif; font-weight:700; font-size:11px; color:#141518;">' + h.temp + '°</div>' +
+          '</div>';
+        }}).join('') +
+      '</div>';
+  }}
+  document.getElementById('modal-body').innerHTML =
+    '<div style="padding:8px 2px;">' +
+      '<div style="display:flex; gap:10px; margin-bottom:4px;">' +
+        '<div style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
+          '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#E8520A;">' + nEvents + '</div>' +
+          '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Events</div>' +
+        '</div>' +
+        '<div style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
+          '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#00457c;">' + nTravel + '</div>' +
+          '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Travel</div>' +
+        '</div>' +
+      '</div>' +
+      weatherHtml +
+      '<div style="font-family:\\'DM Sans\\',sans-serif; font-size:11px; color:#A0A7B4; text-align:center; margin-top:10px;">' +
+        hint +
+      '</div>' +
+    '</div>';
   document.getElementById('modal-overlay').classList.add('open');
 }}
 
@@ -2330,6 +2755,25 @@ function renderDayList(day) {{
             '</div>';
   }});
   document.getElementById('modal-body').innerHTML = html;
+}}
+
+function renderRoadworksList(day) {{
+  const items = ROADWORKS_BY_DAY[day] || [];
+  let html = '';
+  items.forEach(function(r, idx) {{
+    const sub = [r.status, (r.comment || r.location)].filter(Boolean).join(' · ');
+    const windowHtml = (r.start_time || r.end_time)
+      ? '<span class="day-event-window">' + esc(formatWindow(r.start_time, r.end_time)) + '</span>'
+      : '';
+    html += '<div class="day-event-row" onclick="showRoadworksDetail(' + day + ',' + idx + ')">' +
+              '<div class="day-event-top">' +
+                '<div class="day-event-name">' + esc(r.road) + windowHtml + '</div>' +
+                closureBadge(r.closure_type) +
+              '</div>' +
+              (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
+            '</div>';
+  }});
+  document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No travel linked to this day.</div>';
 }}
 
 function showDetail(day, idx) {{
@@ -2355,9 +2799,64 @@ function showDetail(day, idx) {{
   document.getElementById('modal-body').innerHTML = html;
 }}
 
+function isoTimePart(iso) {{
+  const m = String(iso || '').match(/T(\\d{{2}}:\\d{{2}})/);
+  return m ? m[1] : null;
+}}
+
+function isoDatePart(iso) {{
+  const m = String(iso || '').match(/^(\\d{{4}}-\\d{{2}}-\\d{{2}})/);
+  return m ? m[1] : null;
+}}
+
+function formatWindow(startIso, endIso) {{
+  const sTime = isoTimePart(startIso);
+  const eTime = isoTimePart(endIso);
+  const sDate = isoDatePart(startIso);
+  const eDate = isoDatePart(endIso);
+
+  const startLabel = sTime || (startIso ? String(startIso) : '?');
+  let endLabel = 'ongoing';
+  if (eTime) {{
+    endLabel = eTime;
+    // Overnight/multi-day closures: flag the end time with a short date so
+    // "20:00 → 05:00" doesn't read as if it ends the same evening it started.
+    if (sDate && eDate && sDate !== eDate) {{
+      const d = new Date(eDate + 'T00:00:00Z');
+      const dayNum = d.getUTCDate();
+      const mon = d.toLocaleString('en-GB', {{ month: 'short', timeZone: 'UTC' }});
+      endLabel = eTime + ' (' + dayNum + ' ' + mon + ')';
+    }}
+  }}
+  return startLabel + ' → ' + endLabel;
+}}
+
+function showRoadworksDetail(day, idx) {{
+  const r = (ROADWORKS_BY_DAY[day] || [])[idx];
+  if (!r) return;
+  document.getElementById('modal-title').innerText = 'Travel Detail';
+  let html = '<div class="back-link" onclick="backToDay()">‹ Back to ' + day + ' ' + MONTH_LABEL + '</div>';
+  html += '<div class="detail-name">' + esc(r.road) + '</div>';
+  html += '<div class="score-row">' + closureBadge(r.closure_type) + '</div>';
+  if (r.location) html += '<div class="detail-field"><div class="detail-label">Location</div><div class="detail-value">' + esc(r.location) + '</div></div>';
+  if (r.status)   html += '<div class="detail-field"><div class="detail-label">Status</div><div class="detail-value">' + esc(r.status) + '</div></div>';
+  if (r.cause)    html += '<div class="detail-field"><div class="detail-label">Cause</div><div class="detail-value">' + esc(r.cause) + '</div></div>';
+  if (r.start_time || r.end_time) {{
+    html += '<div class="detail-field"><div class="detail-label">Window</div><div class="detail-value">' +
+            esc(formatWindow(r.start_time, r.end_time)) + '</div></div>';
+  }}
+  if (r.comment) html += '<div class="detail-field"><div class="detail-label">Comment</div><div class="detail-value">' + esc(r.comment) + '</div></div>';
+  document.getElementById('modal-body').innerHTML = html;
+}}
+
 function backToDay() {{
-  document.getElementById('modal-title').innerText = 'Events — ' + currentDay + ' ' + MONTH_LABEL;
-  renderDayList(currentDay);
+  if (currentMode === 'roadworks') {{
+    document.getElementById('modal-title').innerText = 'Travel — ' + currentDay + ' ' + MONTH_LABEL;
+    renderRoadworksList(currentDay);
+  }} else {{
+    document.getElementById('modal-title').innerText = 'Events — ' + currentDay + ' ' + MONTH_LABEL;
+    renderDayList(currentDay);
+  }}
 }}
 </script>
 </body></html>"""
@@ -2530,6 +3029,290 @@ def fetch_skiddle(lat, lon, radius, status, progress):
     return events
 
 
+# =====================================================
+# ROADWORKS (National Highways Road & Lane Closures)
+# =====================================================
+# Adapted from roadworks_near_postcode.py: same DATEX II parsing / distance
+# logic, but wired into this app's existing `supabase` client and postcode
+# geocoding instead of running as its own standalone script.
+
+def haversine_miles(lat1, lon1, lat2, lon2):
+    r = 3958.8  # earth radius, miles
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _parse_pos_list(pos_list_str):
+    """posList is a space-separated list of 'lat lon lat lon ...' (WGS84)."""
+    nums = [float(n) for n in pos_list_str.split()]
+    return list(zip(nums[0::2], nums[1::2]))
+
+
+def _points_from_loc(loc):
+    pts = []
+    linear = loc.get("locLinearLocation")
+    if linear:
+        gml = linear.get("gmlLineString", {}).get("locGmlLineString", {})
+        pos_list = gml.get("posList")
+        if pos_list:
+            pts.extend(_parse_pos_list(pos_list))
+    return pts
+
+
+def _locs_from_reference(location_reference):
+    if not location_reference:
+        return []
+    grouped = location_reference.get("locLocationGroupByList")
+    if grouped:
+        return grouped.get("locationContainedInGroup", [])
+    return [location_reference]
+
+
+def _extract_points(location_reference):
+    """Return list of (lat, lon) points, handling both the single-location
+    and multi-location (grouped) schema variants documented for this API."""
+    points = []
+    for loc in _locs_from_reference(location_reference):
+        points.extend(_points_from_loc(loc))
+    return points
+
+
+def _extract_road_and_description(location_reference):
+    roads = set()
+    descs = []
+    for loc in _locs_from_reference(location_reference):
+        linear = loc.get("locLinearLocation", {})
+        supp = linear.get("supplementaryPositionalDescription", {})
+        desc = supp.get("locationDescription")
+        if desc:
+            descs.append(desc)
+        single = loc.get("locSingleRoadLinearLocation", {})
+        for lw in single.get("linearWithinLinearElement", []):
+            code = lw.get("linearElement", {}).get("locLinearElementByCode", {})
+            rn = code.get("roadName")
+            if rn:
+                roads.add(rn)
+    road = ", ".join(sorted(roads)) if roads else "Unknown road"
+    desc = "; ".join(dict.fromkeys(descs))
+    return road, desc
+
+
+def _nearest_point(lat, lon, points):
+    """Return (point, distance_miles) for the closest point, or (None, None)."""
+    if not points:
+        return None, None
+    best = min(points, key=lambda p: haversine_miles(lat, lon, p[0], p[1]))
+    return best, haversine_miles(lat, lon, best[0], best[1])
+
+
+def _stable_record_id(node, location_ref):
+    """Prefer the DATEX II idG (stable across repeated calls). Fall back to a
+    deterministic hash of key fields if idG is ever missing."""
+    idg = node.get("idG")
+    if idg:
+        return idg
+    basis = json.dumps({
+        "loc": location_ref,
+        "comment": node.get("generalPublicComment"),
+        "validity": node.get("validity"),
+    }, sort_keys=True)
+    return "hash-" + hashlib.sha256(basis.encode("utf-8")).hexdigest()[:32]
+
+
+def _nh_seconds_to_wait(resp, default=5):
+    """Pull a wait time out of a 429 response: prefer the Retry-After header,
+    fall back to parsing '...Try again in N seconds' from the JSON body."""
+    retry_after = resp.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return float(retry_after) + 0.5
+        except ValueError:
+            pass
+    match = re.search(r"(\d+(?:\.\d+)?)\s*seconds?", resp.text or "")
+    if match:
+        return float(match.group(1)) + 0.5
+    return default
+
+
+def fetch_nh_closures(subscription_key, closure_type=None, start=None, end=None):
+    """Yields situationRecord dicts from the National Highways closures API,
+    following pagination via the x-next header."""
+    params = {}
+    if closure_type:
+        params["closureType"] = closure_type
+    if start:
+        params["startDateTime"] = start
+    if end:
+        params["endDateTime"] = end
+
+    url = NH_BASE_URL + ("?" + urllib.parse.urlencode(params) if params else "")
+    headers = {
+        "Ocp-Apim-Subscription-Key": subscription_key,
+        "X-Response-MediaType": "application/json",
+        "X-Data-Format": "DATEXII",
+        "Accept": "application/json",
+    }
+
+    seen_urls = set()
+    while url and url not in seen_urls:
+        seen_urls.add(url)
+        max_retries = 3
+        resp = None
+        for attempt in range(max_retries + 1):
+            resp = requests.get(url, headers=headers, timeout=30)
+            if resp.status_code == 429 and attempt < max_retries:
+                time.sleep(_nh_seconds_to_wait(resp))
+                continue
+            if not resp.ok:
+                raise RuntimeError(f"HTTP {resp.status_code} calling National Highways API: {resp.text[:300]}")
+            break
+
+        body = resp.json()
+        next_url = resp.headers.get("x-next")
+        payload = body.get("D2Payload", body)
+        for situation in payload.get("situation", []):
+            for record in situation.get("situationRecord", []):
+                yield record
+
+        url = next_url
+        if url:
+            time.sleep(0.5)  # courtesy pause between pages
+
+
+def summarize_roadworks_record(record, ref_lat, ref_lon, radius_miles, closure_type):
+    node = record.get("sitRoadOrCarriagewayOrLaneManagement", record)
+    location_ref = node.get("locationReference", {})
+    points = _extract_points(location_ref)
+    best_point, distance = _nearest_point(ref_lat, ref_lon, points)
+    if distance is None or distance > radius_miles:
+        return None
+
+    validity = node.get("validity", {})
+    time_spec = validity.get("validityTimeSpecification", {})
+    cause = node.get("cause", {})
+    comments = node.get("generalPublicComment", [])
+    comment_text = "; ".join(c.get("comment", "") for c in comments if c.get("comment"))
+    road, desc = _extract_road_and_description(location_ref)
+
+    return {
+        "record_id":     _stable_record_id(node, location_ref),
+        "closure_type":  closure_type,
+        "distance_miles": round(distance, 2),
+        "road":          road,
+        "location":      desc,
+        "status":        validity.get("validityStatus"),
+        "start_time":    time_spec.get("overallStartTime"),
+        "end_time":      time_spec.get("overallEndTime"),
+        "cause":         cause.get("causeType"),
+        "comment":       comment_text,
+        "latitude":      best_point[0] if best_point else None,
+        "longitude":     best_point[1] if best_point else None,
+    }
+
+
+def to_roadworks_db_row(summary):
+    """Drop fields that are relative to a specific search (not a fixed
+    attribute of the closure itself) before writing to Supabase."""
+    row = dict(summary)
+    row.pop("distance_miles", None)
+    # Explicit rather than relying on the column's DB-side default, so this
+    # keeps working correctly even if the default ever changes or the table
+    # gets recreated. The Street Manager receiver stamps its own rows with
+    # source="street_manager" the same way.
+    row["source"] = "national_highways"
+    return row
+
+
+def fetch_roadworks(lat, lon, radius, status, progress):
+    """Fetch National Highways closures (planned + unplanned) near lat/lon
+    within `radius` miles. Mirrors the fetch_ticketmaster / fetch_skiddle
+    pattern: returns a list of summary dicts ready for storage."""
+    if not NH_API_KEY:
+        status.text("⚠ Roadworks skipped — add NH_API_KEY to secrets")
+        return []
+
+    now = datetime.now(timezone.utc)
+    windows = [
+        ("unplanned", now - timedelta(hours=ROADWORKS_HOURS_BACK), now),
+        ("planned",   now, now + timedelta(days=ROADWORKS_DAYS_AHEAD)),
+    ]
+
+    results   = []
+    seen_ids  = set()
+    for i, (ctype, start_dt, end_dt) in enumerate(windows):
+        status.text(f"Querying {ctype} roadworks...")
+        start = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        end   = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        try:
+            for record in fetch_nh_closures(NH_API_KEY, closure_type=ctype, start=start, end=end):
+                summary = summarize_roadworks_record(record, lat, lon, radius, ctype)
+                # The unplanned/planned windows can both match an ongoing closure
+                # (or the API's own paging can resurface a record) — keep only the
+                # first sighting of a given record_id so we never send duplicate
+                # rows into the same upsert batch.
+                if summary and summary["record_id"] not in seen_ids:
+                    seen_ids.add(summary["record_id"])
+                    results.append(summary)
+        except RuntimeError as e:
+            st.warning(f"National Highways API ({ctype}): {e}")
+        progress.progress(min(1.0, 0.5 + (i + 1) * 0.25))
+
+    return results
+
+
+def get_roadworks_within_radius(lat, lon, radius):
+    """Read every stored closure from Supabase and filter to those within
+    `radius` miles of (lat, lon), computing distance client-side (this table
+    has no PostGIS radius RPC like BurdySteupTest does)."""
+    try:
+        rows = supabase.table(ROADWORKS_TABLE).select("*").execute().data or []
+    except Exception as e:
+        st.warning(f"Couldn't read {ROADWORKS_TABLE} from Supabase: {e}")
+        return pd.DataFrame()
+
+    nearby = []
+    for r in rows:
+        rlat, rlon = r.get("latitude"), r.get("longitude")
+        if rlat is None or rlon is None:
+            continue
+        dist = haversine_miles(lat, lon, rlat, rlon)
+        if dist <= radius:
+            r = dict(r)
+            r["distance_miles"] = round(dist, 2)
+            nearby.append(r)
+
+    nearby.sort(key=lambda r: r["distance_miles"])
+    df = pd.DataFrame(nearby)
+
+    # Both dedup steps below only affect what's *displayed* — every row stays
+    # in Supabase untouched, each still keyed by its own unique record_id.
+    # When duplicates are found, keep the newest one: "id" is the table's
+    # auto-increment primary key, so the highest id is the most recently
+    # inserted row.
+    if not df.empty and "id" in df.columns:
+        df = df.sort_values("id", ascending=False)
+
+    # Defensive: if the table ever ends up with duplicate record_ids (e.g. the
+    # upsert's on_conflict target isn't backed by a real unique constraint in
+    # Postgres), don't let that surface as duplicate rows in the UI.
+    if not df.empty and "record_id" in df.columns:
+        df = df.drop_duplicates(subset="record_id", keep="first")
+    # National Highways can re-publish the same real-world closure under a
+    # brand-new record_id (e.g. a revised/re-versioned situation record), which
+    # the record_id-based dedup above can't catch. If two rows describe the
+    # same location, comment, and time window, treat them as one closure and
+    # keep the newest.
+    dedup_cols = ["location", "comment", "start_time", "end_time"]
+    if not df.empty and all(c in df.columns for c in dedup_cols):
+        df = df.drop_duplicates(subset=dedup_cols, keep="first")
+
+    df = df.sort_values("distance_miles")
+    return df
+
+
 # ── Helper: paginate an RPC call that returns rows ──
 def rpc_fetch_all(fn_name: str, params: dict, page_size: int = 1000) -> list:
     """Call a Supabase RPC function repeatedly with .range() until all rows are
@@ -2548,6 +3331,23 @@ def rpc_fetch_all(fn_name: str, params: dict, page_size: int = 1000) -> list:
             break          # last (or only) page
         offset += page_size
     return all_rows
+
+
+def get_all_time_events_within_radius(lat, lon, radius, type_filters=None, venue_filters=None):
+    """search_within_radius filters out anything before "now" server-side
+    (see its WHERE clause), so the live search's filtered_df never contains
+    historical events — that's why past calendar days always showed 0. This
+    calls the exact same RPC, same radius/type/venue filters, but with a
+    deliberately ancient now_utc so its date comparison never excludes a row.
+    Used only to get accurate historical counts for past days in the
+    calendar; the live search itself is untouched."""
+    params = {
+        "lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
+        "now_utc": "1900-01-01T00:00:00+00:00",
+        "type_filters": type_filters or [], "venue_filters": venue_filters or [],
+    }
+    rows = rpc_fetch_all("search_within_radius", params)
+    return pd.DataFrame(rows)
 
 # =====================================================
 # FIND & SYNC ALL EVENTS
@@ -2597,6 +3397,30 @@ if find_events:
         except RuntimeError as e:
             st.error(str(e))
             sk_count = 0
+
+        # ── ROADWORKS (National Highways) ──
+        rw_count = 0
+        try:
+            rw_events = fetch_roadworks(lat, lon, radius, status, progress)
+        except RuntimeError as e:
+            st.error(str(e))
+            rw_events = []
+        if rw_events:
+            rw_rows = [to_roadworks_db_row(r) for r in rw_events]
+            try:
+                supabase.table(ROADWORKS_TABLE).upsert(rw_rows, on_conflict="record_id").execute()
+            except Exception as e:
+                st.warning(f"Couldn't save roadworks to Supabase: {e}")
+            rw_count = len(rw_rows)
+        status.text(f"✓ Roadworks: {rw_count} closures processed")
+
+        # Read back everything within radius (fresh inserts + anything already stored)
+        st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
+
+        # All-time (incl. historical) events within radius, for accurate
+        # past-day counts in the calendar — the live search below only
+        # returns current/future events by design.
+        st.session_state["all_events_df"] = get_all_time_events_within_radius(lat, lon, radius)
 
         progress.progress(1.0)
 
@@ -2705,6 +3529,15 @@ if search_db:
             st.session_state.pop("calendar_year", None)
             st.session_state.pop("calendar_month", None)
 
+            # Just re-read whatever roadworks are already stored within radius —
+            # Search doesn't hit the National Highways API (that only happens on Fetch & Sync)
+            st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
+
+            # All-time (incl. historical) events within radius, for accurate
+            # past-day counts in the calendar — the live search above only
+            # returns current/future events by design.
+            st.session_state["all_events_df"] = get_all_time_events_within_radius(lat, lon, radius)
+
             log_search_event(
                 action="search",
                 postcode=postcode,
@@ -2741,6 +3574,7 @@ if not _results_committed:
     st.session_state["search_df"]     = pd.DataFrame()
     st.session_state["filtered_df"]   = pd.DataFrame()
     st.session_state["search_label"]  = ""
+    st.session_state["roadworks_df"]  = pd.DataFrame()
     stats_slot.markdown(
         _stat_row_initial(_initial_total, _initial_today, _initial_this_week),
         unsafe_allow_html=True
@@ -2893,6 +3727,11 @@ if not df.empty:
                 selected_types or [],
                 selected_venues or [],
             )
+            st.session_state["all_events_df"] = get_all_time_events_within_radius(
+                _lat, _lon, _rad,
+                selected_types or [],
+                selected_venues or [],
+            )
 
     filtered_df = st.session_state.get("filtered_df", df)
 
@@ -3001,8 +3840,17 @@ if not df.empty:
         if "rows_per_page" not in st.session_state:
             st.session_state["rows_per_page"] = 25
 
+        # Roadworks are merged into the same list, mapped onto the events' display
+        # columns (Name / Venue Name / Date / Type / City / Impact Score / Rating).
+        roadworks_df   = st.session_state.get("roadworks_df", pd.DataFrame())
+        roadworks_rows = build_roadworks_list_rows(roadworks_df)
+        combined_df = (
+            pd.concat([filtered_df, roadworks_rows], ignore_index=True, sort=False)
+            if not roadworks_rows.empty else filtered_df
+        )
+
         per_page    = st.session_state["rows_per_page"]
-        total_pages = max(1, -(-len(filtered_df) // per_page))
+        total_pages = max(1, -(-len(combined_df) // per_page))
         page_num    = max(1, min(st.session_state["page_num"], total_pages))
 
         ctrl_left, ctrl_mid, ctrl_right = st.columns([2, 6, 2])
@@ -3017,7 +3865,13 @@ if not df.empty:
                 st.rerun()
 
         with ctrl_mid:
-            total_label = f"{len(filtered_df)} events" if len(filtered_df) == len(df) else f"{len(filtered_df)} filtered results"
+            n_rw = len(roadworks_rows)
+            if n_rw:
+                total_label = f"{len(filtered_df)} events · {n_rw} roadworks"
+            elif len(filtered_df) == len(df):
+                total_label = f"{len(filtered_df)} events"
+            else:
+                total_label = f"{len(filtered_df)} filtered results"
             st.markdown(
                 f"<div style='text-align:center;font-family:DM Mono,monospace;font-size:12px;"
                 f"color:#6B7280;padding-top:28px;'>"
@@ -3038,7 +3892,7 @@ if not df.empty:
                     st.session_state["page_num"] = page_num + 1
                     st.rerun()
 
-        render_table(filtered_df, page=st.session_state["page_num"], per_page=per_page)
+        render_table(combined_df, page=st.session_state["page_num"], per_page=per_page)
 
     else:
         # ── Calendar view ──
@@ -3087,4 +3941,10 @@ if not df.empty:
                 st.session_state["calendar_month"] = new_month
                 st.rerun()
 
-        render_calendar(filtered_df, cal_year, cal_month)
+        render_calendar(
+            filtered_df, cal_year, cal_month,
+            st.session_state.get("roadworks_df", pd.DataFrame()),
+            lat=st.session_state.get("_search_lat"),
+            lon=st.session_state.get("_search_lon"),
+            all_events_df=st.session_state.get("all_events_df", pd.DataFrame()),
+        )

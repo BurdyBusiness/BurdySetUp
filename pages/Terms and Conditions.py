@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import base64
 from PIL import Image
 from io import BytesIO
 import streamlit.components.v1 as components
@@ -15,7 +14,7 @@ response = requests.get(ICON_URL)
 icon = Image.open(BytesIO(response.content))
 
 st.set_page_config(
-    page_title="Burdy · Careers",
+    page_title="Burdy · Terms & Conditions",
     page_icon=icon,
     layout="wide",
     initial_sidebar_state="auto",
@@ -27,7 +26,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 :root {
     --orange:      #E8520A;
@@ -101,7 +100,7 @@ html, body, [class*="css"] {
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 28px 32px;
-    margin-bottom: 24px;
+    margin-bottom: 32px;
     position: relative;
     overflow: hidden;
     box-shadow: 0 2px 12px rgba(0,0,0,.06);
@@ -114,17 +113,17 @@ html, body, [class*="css"] {
 hr {
     border: none !important;
     border-top: 1px solid var(--border) !important;
-    margin: 20px 0 !important;
+    margin: 28px 0 !important;
 }
 
-/* ── Hero-style intro block (pill + headline), contained within the
-      page width to match the rest of the site's simpler pages ── */
-.page-hero {
+/* ── Hero-style intro (pill + headline + body-text), same pattern as
+      About Us's intro block, contained within the page width ── */
+.about-hero {
     text-align: center;
     padding: 8px 20px 4px;
     margin-bottom: 8px;
 }
-.page-pill {
+.about-pill {
     display: inline-block;
     background: var(--orange-glow);
     border: 1px solid rgba(232,82,10,.22);
@@ -138,222 +137,77 @@ hr {
     text-transform: uppercase;
     font-weight: 500;
 }
-.page-headline {
+.about-headline {
     font-family: 'DM Sans', sans-serif;
     font-weight: 800;
-    font-size: 26px;
+    font-size: 28px;
     letter-spacing: -.03em;
     color: var(--text);
-    max-width: 720px;
+    max-width: 780px;
     margin: 0 auto 16px;
-    line-height: 1.3;
+    line-height: 1.2;
+}
+.about-body {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: var(--text-dim);
+    max-width: 640px;
+    margin: 0 auto;
+    line-height: 1.75;
 }
 
-/* ── Content sections ── */
-.section-title {
+/* ── Section heading (matches About Us's "Our Values" heading) ── */
+.section-heading {
     font-family: 'DM Sans', sans-serif;
     font-weight: 700;
-    font-size: 15px;
-    letter-spacing: -.01em;
+    font-size: 20px;
+    letter-spacing: -.02em;
     color: var(--text);
-    margin: 0 0 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    text-align: center;
+    margin: 8px 0 24px;
 }
-.section-title::before {
-    content: '';
-    width: 3px; height: 14px;
-    background: linear-gradient(180deg, var(--orange), var(--green));
-    border-radius: 2px;
-    display: inline-block;
+
+/* ── Terms & Conditions content — constrained to a comfortable reading
+      width within the page, same way About Us's own text blocks stay
+      narrower than the full wide layout ── */
+.tc-wrap {
+    max-width: 820px;
+    margin: 0 auto;
 }
-.section-body {
+.tc-section-title {
     font-family: 'DM Sans', sans-serif;
-    font-size: 13.5px;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -.01em;
+    color: var(--orange);
+    margin-top: 34px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+.tc-body, .tc-body li {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
     line-height: 1.75;
     color: var(--text-dim);
 }
-.section-body b, .section-body strong { color: var(--text); font-weight: 700; }
-.content-list {
-    list-style: none;
-    margin: 4px 0 0;
-    padding: 0;
-}
-.content-list li {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 13.5px;
-    line-height: 1.7;
-    color: var(--text-dim);
-    padding: 3px 0 3px 20px;
+.tc-body p { margin-bottom: 12px; }
+.tc-body ul { margin-top: 4px; margin-bottom: 12px; padding-left: 22px; }
+.tc-body strong { color: var(--text); font-weight: 700; }
+.tc-contact-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 10px;
     position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
-.content-list li::before {
-    content: '';
-    position: absolute; left: 0; top: 11px;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--orange);
-}
-.contact-line {
-    font-family: 'DM Mono', monospace;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    margin: 4px 0;
-}
-.contact-line a { color: var(--orange); text-decoration: none; }
-.contact-line a:hover { text-decoration: underline; }
-
-/* ── Popup dialog (success / warning) ── */
-div[data-testid="stDialog"] {
-    background: rgba(20,21,24,0.35) !important;
-    backdrop-filter: blur(6px) !important;
-    -webkit-backdrop-filter: blur(6px) !important;
-    z-index: 500 !important;
-    position: fixed !important;
-    top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
-    width: 100vw !important; height: 100vh !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-div[data-testid="stDialog"] [role="dialog"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 16px !important;
-    position: relative !important;
-    overflow: hidden !important;
-    box-shadow: 0 8px 32px rgba(0,0,0,.25) !important;
-    margin: 0 !important; top: auto !important; left: auto !important; transform: none !important;
-}
-div[data-testid="stDialog"] [role="dialog"]::before {
+.tc-contact-box::before {
     content: '';
     position: absolute; top: 0; left: 0; right: 0; height: 3px;
     background: linear-gradient(90deg, var(--orange), var(--green), transparent);
-    z-index: 1;
-}
-
-/* ── Form styling (matches Contact Us) ── */
-div[data-testid="stForm"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 16px !important;
-    padding: 28px 32px !important;
-    position: relative !important;
-    overflow: hidden !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,.06) !important;
-}
-div[data-testid="stForm"]::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--orange), var(--green), transparent);
-}
-div[data-testid="stTextInput"] input,
-div[data-testid="stTextArea"] textarea {
-    background: var(--surface2) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 13px !important;
-    color: var(--text) !important;
-}
-div[data-testid="stTextInput"] input:focus,
-div[data-testid="stTextArea"] textarea:focus {
-    border-color: var(--orange) !important;
-    box-shadow: 0 0 0 3px var(--orange-glow) !important;
-}
-div[data-testid="stTextInput"] label,
-div[data-testid="stTextArea"] label {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: .06em !important;
-    text-transform: uppercase !important;
-    color: var(--text-muted) !important;
-}
-div[data-testid="stFileUploader"] label {
-    font-family: 'DM Mono', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: .06em !important;
-    text-transform: uppercase !important;
-    color: var(--text-muted) !important;
-}
-div[data-testid="stFileUploaderDropzone"] {
-    background: var(--surface2) !important;
-    border: 1px dashed var(--border) !important;
-    border-radius: 10px !important;
-}
-div[data-testid="stFileUploaderDropzone"]:hover {
-    border-color: var(--orange) !important;
-}
-div[data-testid="stFileUploaderDropzone"] button {
-    background: var(--surface) !important;
-    color: var(--text) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 600 !important;
-    font-size: 12px !important;
-    box-shadow: none !important;
-}
-div[data-testid="stFileUploaderDropzone"] button:hover {
-    border-color: var(--orange) !important;
-    color: var(--orange) !important;
-    transform: none !important;
-    box-shadow: none !important;
-}
-
-/* ── Job listing styling ── */
-.job-meta {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    margin-bottom: 18px;
-}
-.job-meta-item {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-}
-.job-meta-item b { color: var(--text); font-weight: 600; }
-.job-badge {
-    display: inline-block;
-    background: var(--green-glow);
-    border: 1px solid rgba(23,153,72,.25);
-    border-radius: 999px;
-    padding: 3px 12px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--green-dim);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    margin-bottom: 14px;
-}
-.stButton > button, button[kind="formSubmit"] {
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 12px !important;
-    letter-spacing: .06em !important;
-    text-transform: uppercase !important;
-    border-radius: 8px !important;
-    padding: 10px 22px !important;
-    transition: all .2s !important;
-    background: var(--orange) !important;
-    color: #fff !important;
-    border: none !important;
-    box-shadow: 0 3px 14px var(--orange-glow) !important;
-}
-.stButton > button:hover, button[kind="formSubmit"]:hover {
-    background: var(--orange-dim) !important;
-    box-shadow: 0 5px 20px rgba(232,82,10,.3) !important;
-    transform: translateY(-1px) !important;
-}
-div[data-testid="stAlert"] {
-    border-radius: 10px !important;
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 13px !important;
-    background: rgba(0,0,0,.03) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text-dim) !important;
 }
 
 /* ── Sidebar panel ── */
@@ -366,6 +220,8 @@ div[data-testid="stAlert"] {
     background: var(--bg) !important;
     padding-top: 1rem !important;
 }
+
+/* Orange → green accent bar along right edge */
 [data-testid="stSidebar"]::after {
     content: '';
     position: absolute;
@@ -374,6 +230,8 @@ div[data-testid="stAlert"] {
     background: linear-gradient(180deg, var(--orange), var(--green), transparent);
     z-index: 10;
 }
+
+/* ── Nav links ── */
 [data-testid="stSidebarNavLink"] {
     border-radius: 8px !important;
     margin: 0 6px !important;
@@ -399,6 +257,8 @@ div[data-testid="stAlert"] {
     font-weight: 600 !important;
 }
 [data-testid="stSidebarNavLink"] svg { color: inherit !important; }
+
+/* ── Headings ── */
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
@@ -410,12 +270,16 @@ div[data-testid="stAlert"] {
     color: var(--text-muted) !important;
     margin: 20px 0 8px !important;
 }
+
+/* ── Body text & labels ── */
 [data-testid="stSidebar"] p,
 [data-testid="stSidebar"] label {
     font-family: 'DM Sans', sans-serif !important;
     font-size: 13px !important;
     color: var(--text-dim) !important;
 }
+
+/* ── Inputs & selects ── */
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] [data-baseweb="select"] {
     background: var(--surface) !important;
@@ -429,17 +293,26 @@ div[data-testid="stAlert"] {
     border-color: var(--orange) !important;
     box-shadow: 0 0 0 3px var(--orange-glow) !important;
 }
+
+/* ── Hide stButtons inside sidebar ── */
 [data-testid="stSidebar"] .stButton,
 [data-testid="stSidebar"] .stButton > button {
     display: none !important;
 }
+
+/* ── Dividers ── */
 [data-testid="stSidebar"] hr {
     border-top: 1px solid var(--border) !important;
     margin: 16px 0 !important;
 }
+
+/* ── Scrollbar ── */
 [data-testid="stSidebar"] ::-webkit-scrollbar { width: 4px; }
 [data-testid="stSidebar"] ::-webkit-scrollbar-track { background: var(--bg); }
 [data-testid="stSidebar"] ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Native collapse button: hidden visually but NOT display:none
+      so it stays in the DOM and JS can click it ── */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"] {
     position: fixed !important;
@@ -498,15 +371,20 @@ a.footer-badge:hover {
 }
 
 @media (max-width: 768px) {
-    .block-container { padding: 2rem 1rem 60px !important; }
-    .page-headline { font-size: 20px !important; }
+    .block-container {
+        padding: 2rem 1rem 60px !important;
+    }
+    .about-headline { font-size: 20px !important; }
+    .tc-section-title { font-size: 16px !important; }
     .burdy-footer {
         padding: 10px 1rem !important;
         height: 44px !important;
         overflow: hidden !important;
         flex-wrap: nowrap !important;
     }
-    .footer-badges { display: none !important; }
+    .footer-badges {
+        display: none !important;
+    }
     .footer-copy {
         font-size: 10px !important;
         white-space: nowrap !important;
@@ -674,194 +552,105 @@ st.markdown(f"""
 # =====================================================
 
 st.markdown("""
-<div class="page-hero">
-  <div class="page-pill">💼 &nbsp;Careers at Burdy Business</div>
-  <div class="page-headline">
-    Join our team! We're looking for talented individuals to help us collect and
-    analyze data for the local events and hospitality industry.
-  </div>
+<div class="about-hero">
+  <div class="about-pill">◆ &nbsp;Legal</div>
+  <div class="about-headline">Terms &amp; Conditions</div>
+  <div class="about-body">Burdy Ltd is a data provider, specialising in events and information local to the user.
+The use of Burdy services indicates an acceptance of the below terms. These terms are governed
+by the laws of England and Wales.</div>
 </div>
 """, unsafe_allow_html=True)
 
 # =====================================================
-# JOB VACANCY
+# TERMS & CONDITIONS CONTENT (wording preserved from original page)
 # =====================================================
 
-_left, _center, _right = st.columns([1, 2.4, 1])
+SECTIONS = [
+    ("Service Delivery and Usage", """
+<p>Exactly what the user gets — software access, level of Burdy support, service limitations,
+hours of support.</p>
+<p>It is prohibited to share user log ins, accounts or subsequently downloaded data with
+non-subscribed parties. Scraping, hacking or attempts to disrupt the service are also
+prohibited.</p>
+<p>Burdy Ltd reserves the right to modify, update or temporarily suspend the features of the
+service at any time, including for the use of emergency maintenance. Planned maintenance
+windows will be communicated via X a minimum of a week in advance.</p>
+<p>There is no guarantee of uninterrupted service and no monetary reimbursement will be given
+if experienced.</p>
+<p>Should a user be found to be violating the terms and conditions, Burdy Business Ltd reserve
+the right to suspend or terminate accounts.</p>
+"""),
+    ("Event Information and Provided Data", """
+<p>Burdy is an event discovery platform, not a ticket seller.</p>
+<p>All details provided, including events and roadworks, are sourced from third parties. Dates,
+venues, prices and availability are therefore subject to change.</p>
+<p>Event information is provided on a best-efforts basis and may change without notice.</p>
+<p>Burdy users should verify details of events prior to purchase of tickets or travel.</p>
+<p>The Burdy site / app may link to third-party websites and Burdy is not responsible for these
+sites or any transactions made on them, however may earn affiliate income from any successful
+ticket purchases.</p>
+<p>Burdy Ltd will not be liable for any event cancellations, changes or inaccuracies from third
+party bookings and there will be no guarantee that the service will be always available or
+error free.</p>
+"""),
+    ("Intellectual Property", """
+<p>The branding, logo and website content belong to Burdy Ltd and users may not copy or
+redistribute any such content or detail without company permission.</p>
+"""),
+    ("User Accounts", """
+<p>Users must provide accurate personal information when creating an account.</p>
+<p>Account and password security are the responsibility of the user.</p>
+"""),
+    ("Pricing and Billing Cycle", """
+<p>The receipt of Burdy services is via a subscription service. This will be advertised and
+billed in Great British Pounds once a month on X date and will include VAT. <em>[Include
+cost]</em>. And will continue monthly until cancelled.</p>
+<p>A one off on-boarding fee upon initial enrolment of X may occur.</p>
+<p>Payment methods accepted are via input of card details through the Stripe app.</p>
+<p>Should a card decline upon initial subscription, no account will be created or data shared.
+Should a monthly payment fail, the user account will be suspended and a further payment
+attempted 48 hours later.</p>
+<p>Burdy reserves the right to alter pricing structure at any time, or increase monthly costs.
+In these instances, Burdy will notify all users via email 30 days prior to changes being
+active.</p>
+"""),
+    ("Privacy", """
+<p>All information regarding personal data and storage can be found on Burdy's Privacy
+Policy.</p>
+"""),
+    ("Changes to the Service", """
+<p>Features or services may be modified or discontinued during ongoing development.</p>
+<p>These terms and conditions will be periodically updated.</p>
+"""),
+    ("Cancellation Policy", """
+<p>From initial subscription, users have a 14 day cooling off period to cancel and receive a
+full refund.</p>
+<p>The subscription can be cancelled at any time within a user's account settings. Cancelling
+more than 5 days before the next billing date is free of charge, while cancelling within 5 days
+of the next billing date will result in a final monthly charge.</p>
+<p>Upon cancellation, any data held will be removed from all databases.</p>
+"""),
+]
 
-with _center:
-    st.markdown("""
-    <div class="control-card">
-      <div class="job-badge">Current Vacancy</div>
-      <div class="section-title" style="font-size:18px;">Data Architect / Engineer</div>
-      <div class="job-meta">
-        <div class="job-meta-item">LOCATION &nbsp;<b>Remote / Flexible</b></div>
-        <div class="job-meta-item">JOB TYPE &nbsp;<b>Full-time</b></div>
-      </div>
+st.markdown('<div class="tc-wrap">', unsafe_allow_html=True)
 
-      <div class="section-title">Role Overview</div>
-      <div class="section-body" style="margin-bottom:18px;">
-        We are seeking an experienced <b>Data Architect / Engineer</b> to design and
-        maintain robust data systems that support our analytics platform. You will work
-        closely with the analytics and product teams to ensure high-quality data pipelines
-        for local events and hospitality data.
-      </div>
+for title, body in SECTIONS:
+    st.markdown(f'<div class="tc-section-title">{title}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="tc-body">{body}</div>', unsafe_allow_html=True)
 
-      <div class="section-title">Key Responsibilities</div>
-      <ul class="content-list" style="margin-bottom:18px;">
-        <li>Design, implement, and maintain scalable data pipelines and architectures</li>
-        <li>Optimize data storage, retrieval, and ETL processes</li>
-        <li>Collaborate with analytics and product teams to meet data needs</li>
-        <li>Ensure data quality, integrity, and security</li>
-      </ul>
+# ── Contact Details ──
+st.markdown('<div class="tc-section-title">Contact Details</div>', unsafe_allow_html=True)
+st.markdown("""
+<div class="tc-contact-box tc-body">
+<ul>
+<li><strong>Company name</strong> — Burdy Ltd</li>
+<li><strong>Contact email</strong> — burdybusiness@outlook.com</li>
+<li><strong>Contact telephone number</strong> — 07348 657 940</li>
+</ul>
+</div>
+""", unsafe_allow_html=True)
 
-      <div class="section-title">Required Skills &amp; Qualifications</div>
-      <ul class="content-list" style="margin-bottom:18px;">
-        <li>Strong experience in SQL, Python, and data modeling</li>
-        <li>Familiarity with cloud data platforms (AWS, Azure, or GCP)</li>
-        <li>Experience with ETL tools and pipelines</li>
-        <li>Knowledge of data warehousing concepts</li>
-        <li>Strong problem-solving and communication skills</li>
-      </ul>
-
-      <div class="section-title">Nice-to-Have</div>
-      <ul class="content-list">
-        <li>Experience in real-time event data processing</li>
-        <li>Knowledge of the hospitality or local events industry</li>
-      </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # =====================================================
-    # APPLICATION FORM
-    # =====================================================
-
-    # A file_uploader's value can't be cleared via session_state directly
-    # (unlike text inputs). Instead, bump a version number after a
-    # successful submission so every field below gets a fresh key,
-    # which Streamlit renders as a brand new, empty widget.
-    if "careers_form_version" not in st.session_state:
-        st.session_state.careers_form_version = 0
-    _v = st.session_state.careers_form_version
-
-    with st.form(f"application_form_{_v}"):
-        st.markdown("""
-        <div style="font-family:'DM Sans',sans-serif;font-weight:700;font-size:15px;
-          color:#141518;margin-bottom:16px;">
-          Apply for this role
-        </div>
-        """, unsafe_allow_html=True)
-        applicant_name = st.text_input("Full Name", key=f"app_name_{_v}")
-        applicant_email = st.text_input("Email Address", key=f"app_email_{_v}")
-        applicant_linkedin = st.text_input("LinkedIn Profile URL (optional)", key=f"app_linkedin_{_v}")
-        applicant_resume = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"], key=f"app_resume_{_v}")
-        applicant_message = st.text_area("Cover Letter / Message", height=150, key=f"app_message_{_v}")
-        submitted = st.form_submit_button("Submit Application")
-
-    # =====================================================
-    # SUCCESS / WARNING POPUPS
-    # =====================================================
-
-    @st.dialog(" ")
-    def _success_dialog(applicant_name_text):
-        st.markdown(f"""
-        <div style="text-align:center; padding: 8px 4px 4px;">
-          <div style="font-size:36px; margin-bottom:10px;">✅</div>
-          <div style="font-family:'DM Sans',sans-serif; font-weight:700; font-size:18px;
-            color:#141518; margin-bottom:8px;">
-            Application submitted!
-          </div>
-          <div style="font-family:'DM Sans',sans-serif; font-size:13px; color:#6B7280;">
-            Thank you{f', {applicant_name_text}' if applicant_name_text else ''}! Our
-            recruitment team will contact you shortly.
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.write("")
-        if st.button("Close", use_container_width=True, key="careers_success_close"):
-            st.session_state.careers_show_success = False
-            st.rerun()
-
-    if st.session_state.get("careers_show_success"):
-        _success_dialog(st.session_state.get("careers_last_name", ""))
-
-    @st.dialog(" ")
-    def _warning_dialog(message_text):
-        st.markdown(f"""
-        <div style="text-align:center; padding: 8px 4px 4px;">
-          <div style="font-size:36px; margin-bottom:10px;">⚠️</div>
-          <div style="font-family:'DM Sans',sans-serif; font-weight:700; font-size:18px;
-            color:#141518; margin-bottom:8px;">
-            Please check the form
-          </div>
-          <div style="font-family:'DM Sans',sans-serif; font-size:13px; color:#6B7280;">
-            {message_text}
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.write("")
-        if st.button("Close", use_container_width=True, key="careers_warning_close"):
-            st.rerun()
-
-    if submitted:
-        if not applicant_name or not applicant_email or not applicant_resume:
-            _warning_dialog("Please provide your name, email, and upload your resume.")
-        else:
-            try:
-                # API key comes from Streamlit secrets — never hard-code credentials
-                # in source code. Add this to secrets.toml:
-                #   RESEND_API_KEY = "re_xxxxxxxxxxxxxxxxxxxxxxxx"
-                resend_api_key = st.secrets["RESEND_API_KEY"]
-                receiver_email = "burdybusiness@outlook.com"
-
-                body_text = f"""
-Name: {applicant_name}
-Email: {applicant_email}
-LinkedIn: {applicant_linkedin or '(not provided)'}
-Role: Data Architect / Engineer
-
-Cover Letter / Message:
-{applicant_message or '(not provided)'}
-"""
-                resume_bytes = applicant_resume.getvalue()
-                resume_b64 = base64.b64encode(resume_bytes).decode("utf-8")
-
-                response = requests.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {resend_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "from": "Burdy Business Careers <onboarding@resend.dev>",
-                        "to": [receiver_email],
-                        "reply_to": applicant_email,
-                        "subject": f"[Careers] Data Architect / Engineer — {applicant_name}",
-                        "text": body_text,
-                        "attachments": [
-                            {
-                                "filename": applicant_resume.name,
-                                "content": resume_b64,
-                            }
-                        ],
-                    },
-                    timeout=30,
-                )
-
-                if response.status_code in (200, 201):
-                    st.session_state.careers_last_name = applicant_name
-                    st.session_state.careers_show_success = True
-                    st.session_state.careers_form_version += 1
-                    st.rerun()
-                else:
-                    st.error(f"❌ Error sending application: {response.status_code} — {response.text}")
-
-            except KeyError:
-                st.error(
-                    "❌ Email isn't configured yet. Add RESEND_API_KEY to this app's secrets."
-                )
-            except Exception as e:
-                st.error(f"❌ Error sending application: {e}")
+st.markdown('</div>', unsafe_allow_html=True)  # close .tc-wrap
 
 # =====================================================
 # FOOTER — identical block used across the whole site

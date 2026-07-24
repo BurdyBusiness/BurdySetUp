@@ -26,7 +26,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 :root {
     --orange:      #E8520A;
@@ -76,7 +76,7 @@ html, body, [class*="css"] {
 
 .burdy-logo {
     display: flex; align-items: center; gap: 12px;
-    font-family: 'Syne', sans-serif;
+    font-family: 'DM Sans', sans-serif;
     font-weight: 800; font-size: 24px;
     letter-spacing: -.03em; color: var(--text);
 }
@@ -155,21 +155,7 @@ div[data-testid="stSelectbox"] label {
     text-transform: uppercase !important;
 }
 .stButton > button {
-    font-family: 'Syne', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 12px !important;
-    letter-spacing: .06em !important;
-    text-transform: uppercase !important;
-    border-radius: 8px !important;
-    padding: 10px 22px !important;
-    transition: all .2s !important;
-    width: 100% !important;
-    background: var(--orange) !important;
-    color: #fff !important;
-    border: none !important;
-    box-shadow: 0 3px 14px var(--orange-glow) !important;
-}
-.stButton > button:hover {
+    font-family: 'DM Sans', sans-serif !important;
     background: var(--orange-dim) !important;
     box-shadow: 0 5px 20px rgba(232,82,10,.3) !important;
     transform: translateY(-1px) !important;
@@ -221,8 +207,18 @@ hr {
     border-top: 1px solid var(--border) !important;
     margin: 28px 0 !important;
 }
+/* ── Section heading — identical to About Us ── */
+.section-heading {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -.02em;
+    color: var(--text);
+    text-align: center;
+    margin: 8px 0 24px;
+}
 h3 {
-    font-family: 'Syne', sans-serif !important;
+    font-family: 'DM Sans', sans-serif !important;
     font-weight: 700 !important;
     font-size: 18px !important;
     letter-spacing: -.02em !important;
@@ -579,8 +575,7 @@ st.markdown(f"""
 # =====================================================
 
 st.markdown("""
-<div style="font-family:'Syne',sans-serif;font-weight:700;font-size:20px;
-  letter-spacing:-.02em;color:#141518;margin:20px 0 8px;text-align:center;">
+<div class="section-heading">
   Contact Us
 </div>
 """, unsafe_allow_html=True)
@@ -638,7 +633,7 @@ def _success_dialog():
     st.markdown("""
     <div style="text-align:center; padding: 8px 4px 4px;">
       <div style="font-size:36px; margin-bottom:10px;">✅</div>
-      <div style="font-family:'Syne',sans-serif; font-weight:700; font-size:18px;
+      <div style="font-family:'DM Sans',sans-serif; font-weight:700; font-size:18px;
         color:#141518; margin-bottom:8px;">
         Message sent!
       </div>
@@ -664,7 +659,7 @@ def _warning_dialog(message):
     st.markdown(f"""
     <div style="text-align:center; padding: 8px 4px 4px;">
       <div style="font-size:36px; margin-bottom:10px;">⚠️</div>
-      <div style="font-family:'Syne',sans-serif; font-weight:700; font-size:18px;
+      <div style="font-family:'DM Sans',sans-serif; font-weight:700; font-size:18px;
         color:#141518; margin-bottom:8px;">
         Please check the form
       </div>
