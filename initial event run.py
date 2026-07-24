@@ -147,7 +147,7 @@ div[data-testid="stSlider"] [data-testid="stThumbValue"],
 div[data-testid="stSlider"] [data-testid="stTickBarMin"],
 div[data-testid="stSlider"] [data-testid="stTickBarMax"],
 div[data-testid="stSlider"] div[class*="StyledThumbValue"],
-div[data-testid="stSlider"] div[class*="thumbValue"] { color: var(--green) !important; }
+div[data-testid="stSlider"] div[class*="thumbValue"] { color: var(--text) !important; }
 div[data-testid="stSlider"] label,
 div[data-testid="stSlider"] label p,
 div[data-testid="stSlider"] label span { color: var(--text-dim) !important; }
