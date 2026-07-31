@@ -166,6 +166,7 @@ div[data-testid="stSlider"] label span { color: var(--text-dim) !important; }
     color: #fff !important;
     border: none !important;
     box-shadow: 0 3px 14px var(--orange-glow) !important;
+    white-space: nowrap !important;
 }
 .stButton > button:hover {
     background: var(--orange-dim) !important;
@@ -1092,7 +1093,7 @@ _hero_html = """
 _hero_html = _hero_html.replace("__SEARCH_COUNT__", str(get_search_log_count()))
 components.html(_hero_html, height=520, scrolling=False)
 
-col1, col2, col3, col4 = st.columns([2, 4, 1, 1])
+col1, col2, col3, col4 = st.columns([2, 3, 1, 1.5])
 
 with col1:
     postcode = st.text_input("Enter postcode", placeholder="e.g. B2 5RE")
@@ -3264,12 +3265,33 @@ def fetch_roadworks(lat, lon, radius, status, progress):
     return results
 
 
+def table_fetch_all(table_name: str, select: str = "*", page_size: int = 1000) -> list:
+    """Read a Supabase table with .range() paging until all rows are returned,
+    bypassing the default 1 000-row cap. Same approach as rpc_fetch_all, but
+    for a plain table select instead of an RPC call."""
+    all_rows = []
+    offset = 0
+    while True:
+        resp = (
+            supabase.table(table_name)
+            .select(select)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break          # last (or only) page
+        offset += page_size
+    return all_rows
+
+
 def get_roadworks_within_radius(lat, lon, radius):
     """Read every stored closure from Supabase and filter to those within
     `radius` miles of (lat, lon), computing distance client-side (this table
     has no PostGIS radius RPC like BurdySteupTest does)."""
     try:
-        rows = supabase.table(ROADWORKS_TABLE).select("*").execute().data or []
+        rows = table_fetch_all(ROADWORKS_TABLE, "*")
     except Exception as e:
         st.warning(f"Couldn't read {ROADWORKS_TABLE} from Supabase: {e}")
         return pd.DataFrame()
