@@ -1,6 +1,5 @@
 [theme]
-primaryColor = "#00b300"   # green tick
+primaryColor = "#179948"   # green tick
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"
 textColor = "#000000"
-font = "lucida"
