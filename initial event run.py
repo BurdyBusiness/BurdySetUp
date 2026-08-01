@@ -269,6 +269,14 @@ h3 {
     bottom: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--orange), var(--green), transparent);
 }
+.stat-box-clickable {
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .2s ease;
+}
+.stat-box-clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.09);
+}
 .stat-num {
     font-family: 'DM Sans', sans-serif;
     font-size: 32px;
@@ -1266,45 +1274,28 @@ components.html("""
 """, height=1, scrolling=False)
 
 # ── Stat boxes: always visible, updated progressively during fetch ──
-def _stat_row(tm, sk, new_events, nearby, total, radius_label):
+def _stat_row_initial(total, today, this_week, roadworks_today, roadworks_this_week):
     return f"""
 <div class="stat-row">
-  <div class="stat-box">
-    <div class="stat-num">{tm}</div>
-    <div class="stat-label">Ticketmaster Events</div>
-  </div>
-  <div class="stat-box">
-    <div class="stat-num">{sk}</div>
-    <div class="stat-label">Skiddle Events</div>
-  </div>
-  <div class="stat-box">
-    <div class="stat-num" id="new-events-num">{new_events}</div>
-    <div class="stat-label">New Events Added</div>
-  </div>
-  <div class="stat-box">
-    <div class="stat-num">{nearby}</div>
-    <div class="stat-label">Nearby within {radius_label} miles</div>
-  </div>
-  <div class="stat-box">
+  <div class="stat-box stat-box-clickable" id="stat-box-total" style="flex:1;">
     <div class="stat-num">{total}</div>
     <div class="stat-label">Total in Database</div>
   </div>
-</div>"""
-
-def _stat_row_initial(total, today, this_week):
-    return f"""
-<div class="stat-row">
-  <div class="stat-box" style="flex:1;">
-    <div class="stat-num">{total}</div>
-    <div class="stat-label">Total in Database</div>
-  </div>
-  <div class="stat-box" style="flex:1;">
+  <div class="stat-box stat-box-clickable" id="stat-box-events-today" style="flex:1;">
     <div class="stat-num">{today}</div>
-    <div class="stat-label">Events Today</div>
+    <div class="stat-label">Events in UK Today</div>
   </div>
-  <div class="stat-box" style="flex:1;">
+  <div class="stat-box stat-box-clickable" id="stat-box-events-week" style="flex:1;">
     <div class="stat-num">{this_week}</div>
-    <div class="stat-label">Events This Week</div>
+    <div class="stat-label">Events in UK This Week</div>
+  </div>
+  <div class="stat-box stat-box-clickable" id="stat-box-rw-today" style="flex:1;">
+    <div class="stat-num">{roadworks_today}</div>
+    <div class="stat-label">Travel Disruptions in UK Today</div>
+  </div>
+  <div class="stat-box stat-box-clickable" id="stat-box-rw-week" style="flex:1;">
+    <div class="stat-num">{roadworks_this_week}</div>
+    <div class="stat-label">Travel Disruptions in UK This Week</div>
   </div>
 </div>"""
 
@@ -1318,6 +1309,16 @@ def get_total_events_count():
     guaranteed-fresh read is needed at that specific point."""
     try:
         return supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
+    except Exception:
+        return "—"
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_total_roadworks_count():
+    """Total row count in the roadworks table, cached for 60s — same pattern
+    as get_total_events_count. Used to fold the roadworks table into the
+    'Total in Database' figure alongside the events table."""
+    try:
+        return supabase.table(ROADWORKS_TABLE).select("record_id", count="exact").execute().count or 0
     except Exception:
         return "—"
 
@@ -1342,24 +1343,662 @@ def get_events_this_week_count():
     except Exception:
         return "—"
 
-def _stat_row_search(today_count, week_count, nearby_count, total_db, radius_label):
+@st.cache_data(ttl=60, show_spinner=False)
+def get_roadworks_today_count():
+    """Roadworks/closures active at any point today — an overlap check
+    (start_time <= end of today AND (end_time is null or end_time >= start
+    of today)), since closures span a date range rather than a single day
+    like events do."""
+    try:
+        _now       = datetime.now(timezone.utc)
+        _day_start = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+        _day_end   = _day_start.replace(hour=23, minute=59, second=59)
+        return supabase.table(ROADWORKS_TABLE).select("record_id", count="exact") \
+            .lte("start_time", _day_end.isoformat()) \
+            .or_(f"end_time.is.null,end_time.gte.{_day_start.isoformat()}") \
+            .execute().count or 0
+    except Exception:
+        return "—"
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_roadworks_this_week_count():
+    """Same overlap logic as get_roadworks_today_count, extended to the next
+    7 days."""
+    try:
+        _now       = datetime.now(timezone.utc)
+        _day_start = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+        _week_end  = (_day_start + timedelta(days=6)).replace(hour=23, minute=59, second=59)
+        return supabase.table(ROADWORKS_TABLE).select("record_id", count="exact") \
+            .lte("start_time", _week_end.isoformat()) \
+            .or_(f"end_time.is.null,end_time.gte.{_day_start.isoformat()}") \
+            .execute().count or 0
+    except Exception:
+        return "—"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_newest_events(limit=10, date_filter=None):
+    """Newest `limit` events by insertion time (first_seen_at), optionally
+    restricted to today or this week (by event Date, not insertion time).
+    'week' means the rest of the week EXCLUDING today, so it never overlaps
+    with the 'today' results."""
+    try:
+        q = supabase.table("BurdySteupTest").select("*") \
+            .order("first_seen_at", desc=True).limit(limit)
+        if date_filter == "today":
+            _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            q = q.eq("Date", _today)
+        elif date_filter == "week":
+            _tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
+            _week_end = _tomorrow + timedelta(days=5)
+            q = q.gte("Date", _tomorrow.strftime("%Y-%m-%d")) \
+                 .lte("Date", _week_end.strftime("%Y-%m-%d"))
+        return q.execute().data or []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_newest_roadworks(limit=10, date_filter=None):
+    """Newest `limit` roadworks by insertion time (fetched_at), optionally
+    restricted to those relevant to today or the rest of the week.
+    'today' uses an overlap check (closure spans today at all). 'week' only
+    counts closures that actually START within the tomorrow-to-day+6 window
+    — many closures run for days or have no end date at all, so an overlap
+    check for 'week' would also match closures already active today,
+    defeating the point of the two lists being different. Requiring the
+    start date itself to fall in the future window guarantees these two
+    lists never share a row."""
+    try:
+        q = supabase.table(ROADWORKS_TABLE).select("*") \
+            .order("fetched_at", desc=True).limit(limit)
+        if date_filter == "today":
+            _now       = datetime.now(timezone.utc)
+            _day_start = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+            _day_end   = _day_start.replace(hour=23, minute=59, second=59)
+            q = q.lte("start_time", _day_end.isoformat()) \
+                 .or_(f"end_time.is.null,end_time.gte.{_day_start.isoformat()}")
+        elif date_filter == "week":
+            _now            = datetime.now(timezone.utc)
+            _tomorrow_start = (_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            _week_end       = (_tomorrow_start + timedelta(days=5)).replace(hour=23, minute=59, second=59)
+            q = q.gte("start_time", _tomorrow_start.isoformat()) \
+                 .lte("start_time", _week_end.isoformat())
+        return q.execute().data or []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_newest_combined(limit=10):
+    """Newest `limit` items across BOTH events and roadworks combined,
+    ordered by each row's own insertion timestamp (first_seen_at for
+    events, fetched_at for roadworks)."""
+    ev = get_newest_events(limit=limit, date_filter=None)
+    rw = get_newest_roadworks(limit=limit, date_filter=None)
+    items = (
+        [{"kind": "event",    "data": e, "ts": e.get("first_seen_at") or ""} for e in ev]
+        + [{"kind": "roadwork", "data": r, "ts": r.get("fetched_at") or ""} for r in rw]
+    )
+    items.sort(key=lambda it: it["ts"], reverse=True)
+    return items[:limit]
+
+
+def _iso_time_part(iso):
+    m = re.search(r"T(\d{2}:\d{2})", str(iso or ""))
+    return m.group(1) if m else None
+
+
+def _iso_date_part(iso):
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", str(iso or ""))
+    return m.group(1) if m else None
+
+
+def _format_window(start_iso, end_iso):
+    """Mirror the calendar's JS formatWindow() in Python, so the stat-category
+    modal's roadwork detail view shows the same 'HH:MM → HH:MM (D Mon)'
+    style window."""
+    s_time = _iso_time_part(start_iso)
+    e_time = _iso_time_part(end_iso)
+    s_date = _iso_date_part(start_iso)
+    e_date = _iso_date_part(end_iso)
+
+    start_label = s_time or (str(start_iso) if start_iso else "?")
+    if e_time:
+        end_label = e_time
+        if s_date and e_date and s_date != e_date:
+            try:
+                d = datetime.strptime(e_date, "%Y-%m-%d")
+                end_label = f"{e_time} ({d.day} {d.strftime('%b')})"
+            except Exception:
+                pass
+    else:
+        end_label = "ongoing"
+    return f"{start_label} → {end_label}"
+
+
+def _score_and_rating(row):
+    """Best-effort Impact Score + Rating for an event-like row, used to
+    power the score bar in the stat-category modal's detail view — same
+    calculation the calendar/list views use. Returns (None, None) if the
+    row can't be scored (e.g. a roadwork row, or a malformed dict)."""
+    try:
+        score = calculate_impact_score(row)
+        rating = score_label(score)[0]
+        return score, rating
+    except Exception:
+        return None, None
+
+
+def _normalize_stat_item(kind, row):
+    """Give an event or roadwork row a common shape for display in the stat
+    category modal: title / date / place / city / type label / link, plus
+    an Impact Score + Rating for events so the detail popup can show the
+    same score bar as the calendar's Event Details view."""
+    if kind == "event":
+        score, rating = _score_and_rating(row)
+        return {
+            "kind":   "event",
+            "title":  row.get("Name") or "Untitled event",
+            "date":   (row.get("Date") or "")[:10] or "—",
+            "time":   row.get("Time") or "",
+            "place":  row.get("Venue Name") or "—",
+            "city":   row.get("City") or "",
+            "type":   row.get("Type") or "Event",
+            "url":    row.get("url") or "",
+            "score":  score,
+            "rating": rating,
+        }
+    return {
+        "kind":         "roadwork",
+        "title":        row.get("road") or "Road closure",
+        "date":         (row.get("start_time") or "")[:10] or "—",
+        "place":        row.get("location") or "—",
+        "city":         "",
+        "type":         "Roadwork",
+        "url":          "",
+        "score":        None,
+        "rating":       None,
+        "closure_type": row.get("closure_type") or "planned",
+        "status":       row.get("status") or "",
+        "cause":        row.get("cause") or "",
+        "comment":      row.get("comment") or "",
+        "window":       _format_window(row.get("start_time"), row.get("end_time")),
+    }
+
+
+def _normalize_search_row(row):
+    """Same output shape as _normalize_stat_item, but with case-insensitive
+    field lookup (via _get) — needed here because this normalizes raw
+    Ticketmaster/Skiddle event dicts and RPC search-result rows, whose key
+    casing can vary, unlike the DB rows _normalize_stat_item handles."""
+    title = str(_get(row, "Name", "name", "event_name", "eventname")).strip()
+    date  = str(_get(row, "Date", "date", "event_date", "start_date"))[:10]
+    time_ = str(_get(row, "Time", "time", "event_time")).strip()
+    place = str(_get(row, "Venue Name", "venue_name", "venue", "venuename")).strip()
+    city  = str(_get(row, "City", "city", "town", "location")).strip()
+    type_ = str(_get(row, "Type", "type", "event_type", "category")).strip()
+    url   = str(_get(row, "url", "URL", "link", "Tickets URL")).strip()
+    score, rating = _score_and_rating(row)
+    return {
+        "kind":   "event",
+        "title":  title or "Untitled event",
+        "date":   date or "—",
+        "time":   time_,
+        "place":  place or "—",
+        "city":   city,
+        "type":   type_ or "Event",
+        "url":    url,
+        "score":  score,
+        "rating": rating,
+    }
+
+
+def render_stat_category_modals(categories, titles=None):
+    """Inject one reusable modal into the parent DOM, showing up to 10
+    newest items for whichever clickable stat box was clicked — either
+    the 5 initial dashboard boxes or the 5 Fetch & Sync result boxes.
+    `categories` is a dict of category-key -> list of raw rows (already
+    limited to 10, already ordered newest-first). `titles` optionally
+    overrides/extends the default modal heading for any category key."""
+    import json as _json
+
+    titles_default = {
+        "total":         "Newest Additions — Total in Database",
+        "events-today":  "Newest Events Added — Today",
+        "events-week":   "Newest Events Added — This Week",
+        "rw-today":      "Newest Travel Disruptions — Today",
+        "rw-week":       "Newest Travel Disruptions — This Week",
+    }
+    if titles:
+        titles_default.update(titles)
+    titles = titles_default
+
+    normalized = {}
+    for key, rows in categories.items():
+        out = []
+        for row in rows:
+            if key == "total":
+                out.append(_normalize_stat_item(row["kind"], row["data"]))
+            elif key in ("events-today", "events-week"):
+                out.append(_normalize_stat_item("event", row))
+            elif key in ("rw-today", "rw-week", "so-rw-today", "so-rw-week", "so-rw-added-today"):
+                out.append(_normalize_stat_item("roadwork", row))
+            elif key in ("so-new-today", "so-today", "so-week"):
+                out.append(_normalize_search_row(row))
+            else:
+                out.append(_normalize_stat_item("roadwork", row))
+        normalized[key] = out
+
+    data_json   = _json.dumps(normalized)
+    titles_json = _json.dumps(titles)
+
+    components.html(f"""
+<script>
+(function() {{
+  var doc = window.parent.document;
+  var data   = {data_json};
+  var titles = {titles_json};
+
+  var old = doc.getElementById('burdy-scm');
+  if (old) old.remove();
+  var oldS = doc.getElementById('burdy-scm-style');
+  if (oldS) oldS.remove();
+
+  if (!doc.getElementById('burdy-fonts')) {{
+    var lnk = doc.createElement('link');
+    lnk.id = 'burdy-fonts'; lnk.rel = 'stylesheet';
+    lnk.href = 'https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap';
+    doc.head.appendChild(lnk);
+  }}
+
+  var style = doc.createElement('style');
+  style.id = 'burdy-scm-style';
+  style.textContent = `
+    #burdy-scm {{
+      display:none;position:fixed;inset:0;
+      background:rgba(20,21,24,.55);
+      align-items:center;justify-content:center;padding:20px;
+      z-index:999999;
+    }}
+    #burdy-scm.show {{ display:flex;animation:bScmFade .18s ease; }}
+    @keyframes bScmFade {{ from{{opacity:0}} to{{opacity:1}} }}
+    #burdy-scm .box {{
+      background:#fff;border-radius:14px;width:100%;max-width:420px;max-height:86vh;
+      display:flex;flex-direction:column;overflow:hidden;
+      box-shadow:0 12px 40px rgba(0,0,0,.25);position:relative;
+      animation:bScmUp .2s ease;
+    }}
+    @keyframes bScmUp {{ from{{transform:translateY(16px);opacity:0}} to{{transform:translateY(0);opacity:1}} }}
+    #burdy-scm .box::before {{
+      content:'';position:absolute;top:0;left:0;right:0;height:3px;
+      background:linear-gradient(90deg,#E8520A,#179948,transparent);z-index:1;
+    }}
+    #burdy-scm .hd {{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:18px 20px 12px;border-bottom:1px solid rgba(0,0,0,.08);
+      flex-shrink:0;background:#fff;position:relative;z-index:1;
+    }}
+    #burdy-scm .ttl {{
+      font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:#141518;
+    }}
+    #burdy-scm .xcl {{
+      cursor:pointer;font-size:18px;color:#A0A7B4;line-height:1;
+      padding:2px 6px;border-radius:6px;background:none;border:none;
+    }}
+    #burdy-scm .xcl:hover {{ background:#F0F1F4;color:#141518; }}
+    #burdy-scm .scr {{ padding:14px 20px 20px;overflow-y:auto;flex:1; }}
+    #burdy-scm .ft {{
+      padding:12px 20px 16px;border-top:1px solid rgba(0,0,0,.08);
+      text-align:center;flex-shrink:0;background:#fff;
+    }}
+    #burdy-scm .ft .hint {{
+      font-family:'DM Sans',sans-serif;font-size:11px;color:#A0A7B4;
+    }}
+    #burdy-scm .empty-hint {{
+      text-align:center;color:#A0A7B4;padding:24px 12px;
+      font-family:'DM Sans',sans-serif;font-size:12px;
+    }}
+    #burdy-scm .day-event-row {{
+      padding:12px 14px;border:1px solid rgba(0,0,0,.08);border-radius:10px;
+      margin-bottom:10px;cursor:pointer;transition:border-color .15s, background .15s;
+    }}
+    #burdy-scm .day-event-row:hover {{ border-color:#E8520A;background:rgba(232,82,10,.04); }}
+    #burdy-scm .day-event-top {{
+      display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;
+    }}
+    #burdy-scm .day-event-name {{
+      font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;color:#141518;
+    }}
+    #burdy-scm .day-event-window {{
+      font-family:'DM Mono',monospace;font-weight:500;font-size:10px;color:#6B7280;
+      margin-left:7px;white-space:nowrap;
+    }}
+    #burdy-scm .day-event-sub {{
+      font-family:'DM Mono',monospace;font-size:10px;color:#6B7280;letter-spacing:.02em;
+    }}
+    #burdy-scm .rating-badge {{
+      display:inline-block;padding:2px 9px;border-radius:999px;flex-shrink:0;
+      font-family:'DM Mono',monospace;font-size:9px;font-weight:600;
+      letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;
+    }}
+    #burdy-scm .back-link {{
+      font-family:'DM Mono',monospace;font-size:11px;color:#E8520A;cursor:pointer;
+      margin-bottom:14px;display:inline-block;text-transform:uppercase;letter-spacing:.06em;
+    }}
+    #burdy-scm .detail-name {{
+      font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:#141518;
+      margin-bottom:10px;line-height:1.3;
+    }}
+    #burdy-scm .score-row {{ display:flex;align-items:center;gap:10px;margin-bottom:16px; }}
+    #burdy-scm .score-num {{ font-family:'DM Mono',monospace;font-size:15px;font-weight:600; }}
+    #burdy-scm .score-num small {{ font-size:10px;color:#A0A7B4;font-weight:400; }}
+    #burdy-scm .score-bar-track {{ flex:1;height:4px;background:#F0F1F4;border-radius:2px;overflow:hidden; }}
+    #burdy-scm .score-bar-fill {{ height:4px;border-radius:2px; }}
+    #burdy-scm .detail-field {{ margin-bottom:12px; }}
+    #burdy-scm .detail-label {{
+      font-family:'DM Mono',monospace;font-size:9px;color:#A0A7B4;text-transform:uppercase;
+      letter-spacing:.1em;margin-bottom:2px;
+    }}
+    #burdy-scm .detail-value {{ font-family:'DM Sans',sans-serif;font-size:13px;color:#141518;font-weight:500; }}
+    #burdy-scm .detail-link {{
+      display:inline-block;margin-top:6px;background:#E8520A;color:#fff !important;
+      font-family:'Syne',sans-serif;font-weight:700;font-size:11px;letter-spacing:.05em;
+      text-transform:uppercase;text-decoration:none;padding:10px 18px;border-radius:8px;
+    }}
+    #burdy-scm .detail-link:hover {{ background:#c94308; }}
+    #burdy-scm .pgr {{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 20px;border-top:1px solid rgba(0,0,0,.08);
+      flex-shrink:0;background:#fff;
+    }}
+    #burdy-scm .pgr-btn {{
+      font-family:'DM Mono',monospace;font-size:10px;font-weight:600;
+      letter-spacing:.06em;text-transform:uppercase;
+      background:transparent;border:1px solid rgba(0,0,0,.12);color:#141518;
+      padding:6px 12px;border-radius:999px;cursor:pointer;transition:background .15s;
+    }}
+    #burdy-scm .pgr-btn:hover:not(:disabled) {{ background:#F4F5F7; }}
+    #burdy-scm .pgr-btn:disabled {{ opacity:.35;cursor:default; }}
+    #burdy-scm .pgr-info {{
+      font-family:'DM Mono',monospace;font-size:10px;color:#6B7280;letter-spacing:.04em;
+    }}
+  `;
+  doc.head.appendChild(style);
+
+  var modal = doc.createElement('div');
+  modal.id = 'burdy-scm';
+  modal.innerHTML =
+    '<div class="box">'
+    + '<div class="hd"><div class="ttl" id="burdy-scm-title">Newest Additions</div>'
+    + '<div class="xcl" id="burdy-scm-x">&times;</div></div>'
+    + '<div class="scr">'
+    + '<div id="burdy-scm-list"></div>'
+    + '<div id="burdy-scm-detail" style="display:none;"></div>'
+    + '</div>'
+    + '<div class="pgr" id="burdy-scm-pager" style="display:none;">'
+    + '<button class="pgr-btn" id="burdy-scm-prev">&lsaquo; Prev</button>'
+    + '<span class="pgr-info" id="burdy-scm-pager-info"></span>'
+    + '<button class="pgr-btn" id="burdy-scm-next">Next &rsaquo;</button>'
+    + '</div>'
+    + '<div class="ft" id="burdy-scm-ft" style="display:none;"><div class="hint" id="burdy-scm-hint"></div></div>'
+    + '</div>';
+  doc.body.appendChild(modal);
+
+  var titleEl   = doc.getElementById('burdy-scm-title');
+  var listEl    = doc.getElementById('burdy-scm-list');
+  var detailEl  = doc.getElementById('burdy-scm-detail');
+  var ftEl      = doc.getElementById('burdy-scm-ft');
+  var hintEl    = doc.getElementById('burdy-scm-hint');
+  var pagerEl   = doc.getElementById('burdy-scm-pager');
+  var pagerInfo = doc.getElementById('burdy-scm-pager-info');
+  var prevBtn   = doc.getElementById('burdy-scm-prev');
+  var nextBtn   = doc.getElementById('burdy-scm-next');
+  var PAGE_SIZE = 10;
+  var currentKey  = null;
+  var currentPage = 0;
+
+  var RATING_COLORS = {{
+    "Blockbuster": {{ bg: "rgba(23,153,72,.12)",  fg: "#0f7035" }},
+    "Strong":      {{ bg: "rgba(232,82,10,.12)",  fg: "#c94308" }},
+    "Moderate":    {{ bg: "rgba(217,119,6,.12)",  fg: "#92400e" }},
+    "Low":         {{ bg: "rgba(220,38,38,.10)",  fg: "#991b1b" }}
+  }};
+  var CLOSURE_COLORS = {{
+    "planned":   {{ bg: "rgba(217,119,6,.12)", fg: "#92400e" }},
+    "unplanned": {{ bg: "rgba(220,38,38,.10)", fg: "#991b1b" }}
+  }};
+  var HINTS = {{
+    "total":        "To filter your area please enter your postcode in the search box",
+    "events-today": "To filter your area please enter your postcode in the search box",
+    "events-week":  "To filter your area please enter your postcode in the search box",
+    "rw-today":     "To filter your area please enter your postcode in the search box",
+    "rw-week":      "To filter your area please enter your postcode in the search box"
+  }};
+
+  function esc(s) {{
+    var d = doc.createElement('div');
+    d.innerText = (s || '');
+    return d.innerHTML;
+  }}
+
+  function ratingBadge(rating) {{
+    if (!rating) return '';
+    var c = RATING_COLORS[rating] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+    return '<span class="rating-badge" style="background:' + c.bg + ';color:' + c.fg + ';">' + esc(rating) + '</span>';
+  }}
+
+  function closureBadge(ctype) {{
+    var c = CLOSURE_COLORS[ctype] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+    return '<span class="rating-badge" style="background:' + c.bg + ';color:' + c.fg + ';">' + esc(ctype) + '</span>';
+  }}
+
+  function detailField(label, value) {{
+    return '<div class="detail-field"><div class="detail-label">' + esc(label) + '</div>'
+      + '<div class="detail-value">' + esc(value) + '</div></div>';
+  }}
+
+  function showList(key) {{
+    titleEl.textContent     = titles[key] || 'Newest Additions';
+    detailEl.style.display  = 'none';
+    listEl.style.display    = '';
+    currentKey = key;
+    renderPage();
+    if (HINTS[key]) {{
+      hintEl.textContent = HINTS[key];
+      ftEl.style.display  = '';
+    }} else {{
+      ftEl.style.display  = 'none';
+    }}
+  }}
+
+  function showItemDetail(key, idx) {{
+    var item = (data[key] || [])[idx];
+    if (!item) return;
+    titleEl.textContent = item.kind === 'roadwork' ? 'Travel Detail' : 'Event Details';
+    var html = '<div class="back-link" id="burdy-scm-back">&lsaquo; Back to ' + esc(titles[key] || 'list') + '</div>';
+    html += '<div class="detail-name">' + esc(item.title) + '</div>';
+
+    if (item.kind === 'roadwork') {{
+      html += '<div class="score-row">' + closureBadge(item.closure_type) + '</div>';
+      if (item.place)   html += detailField('Location', item.place);
+      if (item.status)  html += detailField('Status', item.status);
+      if (item.cause)   html += detailField('Cause', item.cause);
+      if (item.window)  html += detailField('Window', item.window);
+      if (item.comment) html += detailField('Comment', item.comment);
+    }} else {{
+      if (item.score !== null && item.score !== undefined) {{
+        var c = RATING_COLORS[item.rating] || {{ bg: "rgba(0,0,0,.06)", fg: "#6B7280" }};
+        html += '<div class="score-row">'
+          + '<div class="score-num" style="color:' + c.fg + ';">' + item.score + '<small>/100</small></div>'
+          + '<div class="score-bar-track"><div class="score-bar-fill" style="width:' + item.score + '%;background:' + c.fg + ';"></div></div>'
+          + ratingBadge(item.rating)
+          + '</div>';
+      }}
+      if (item.place) html += detailField('Venue', item.place);
+      if (item.city)  html += detailField('City', item.city);
+      if (item.type)  html += detailField('Type', item.type);
+      if (item.time)  html += detailField('Time', item.time);
+      if (item.date)  html += detailField('Date', item.date);
+      if (item.url)   html += '<a class="detail-link" href="' + item.url + '" target="_blank" rel="noopener noreferrer">View Event &#8599;</a>';
+    }}
+
+    detailEl.innerHTML = html;
+    listEl.style.display   = 'none';
+    detailEl.style.display = '';
+    ftEl.style.display     = 'none';
+    pagerEl.style.display  = 'none';
+    doc.getElementById('burdy-scm-back').onclick = function() {{ showList(key); }};
+  }}
+
+  function buildRowHtml(item, idx) {{
+    if (item.kind === 'roadwork') {{
+      var windowHtml = item.window ? '<span class="day-event-window">' + esc(item.window) + '</span>' : '';
+      var sub = [item.status, item.place].filter(Boolean).map(esc).join(' &middot; ');
+      return '<div class="day-event-row" data-idx="' + idx + '">'
+        + '<div class="day-event-top">'
+        + '<div class="day-event-name">' + esc(item.title) + windowHtml + '</div>'
+        + closureBadge(item.closure_type)
+        + '</div>'
+        + (sub ? '<div class="day-event-sub">' + sub + '</div>' : '')
+        + '</div>';
+    }}
+    var dateTime = item.date + (item.time ? ' ' + item.time : '');
+    var sub2 = [dateTime, item.place, item.city].filter(Boolean).map(esc).join(' &middot; ');
+    return '<div class="day-event-row" data-idx="' + idx + '">'
+      + '<div class="day-event-top">'
+      + '<div class="day-event-name">' + esc(item.title) + '</div>'
+      + ratingBadge(item.rating)
+      + '</div>'
+      + (sub2 ? '<div class="day-event-sub">' + sub2 + '</div>' : '')
+      + '</div>';
+  }}
+
+  function renderPage() {{
+    var rows = data[currentKey] || [];
+    var totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (currentPage >= totalPages) currentPage = totalPages - 1;
+    if (currentPage < 0) currentPage = 0;
+    var startIdx  = currentPage * PAGE_SIZE;
+    var pageItems = rows.slice(startIdx, startIdx + PAGE_SIZE);
+
+    var html = '';
+    if (rows.length === 0) {{
+      html = '<div class="empty-hint">Nothing to show yet.</div>';
+    }} else {{
+      pageItems.forEach(function(item, i) {{
+        html += buildRowHtml(item, startIdx + i);
+      }});
+    }}
+    listEl.innerHTML = html;
+    var rowEls = listEl.querySelectorAll('.day-event-row');
+    for (var i = 0; i < rowEls.length; i++) {{
+      (function(el) {{
+        el.onclick = function() {{ showItemDetail(currentKey, parseInt(el.getAttribute('data-idx'), 10)); }};
+      }})(rowEls[i]);
+    }}
+
+    if (rows.length > PAGE_SIZE) {{
+      pagerEl.style.display = 'flex';
+      pagerInfo.textContent  = 'Page ' + (currentPage + 1) + ' of ' + totalPages;
+      prevBtn.disabled = currentPage === 0;
+      nextBtn.disabled = currentPage >= totalPages - 1;
+    }} else {{
+      pagerEl.style.display = 'none';
+    }}
+  }}
+
+  prevBtn.onclick = function() {{ if (currentPage > 0) {{ currentPage--; renderPage(); }} }};
+  nextBtn.onclick = function() {{
+    var rows = data[currentKey] || [];
+    var totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (currentPage < totalPages - 1) {{ currentPage++; renderPage(); }}
+  }};
+
+  function renderCategory(key) {{
+    currentKey  = key;
+    currentPage = 0;
+    showList(key);
+  }}
+
+  function show(key) {{
+    renderCategory(key);
+    modal.classList.add('show');
+  }}
+  function dismiss() {{
+    modal.style.opacity = '0';
+    modal.style.transition = 'opacity .15s ease';
+    setTimeout(function() {{ modal.style.opacity=''; modal.style.transition=''; modal.classList.remove('show'); }}, 150);
+  }}
+
+  doc.getElementById('burdy-scm-x').addEventListener('click', dismiss);
+  modal.addEventListener('click', function(e) {{ if (e.target === modal) dismiss(); }});
+  doc.addEventListener('keydown', function handler(e) {{
+    if (e.key === 'Escape') {{ dismiss(); doc.removeEventListener('keydown', handler); }}
+  }});
+
+  // Attach clicks to each stat box — retry until they appear in the DOM,
+  // since this script can run before Streamlit has finished rendering the
+  // markdown block containing them.
+  var boxKeys = {{
+    'stat-box-total':        'total',
+    'stat-box-events-today': 'events-today',
+    'stat-box-events-week':  'events-week',
+    'stat-box-rw-today':     'rw-today',
+    'stat-box-rw-week':      'rw-week',
+    'stat-box-so-new-today':  'so-new-today',
+    'stat-box-so-today':      'so-today',
+    'stat-box-so-week':       'so-week',
+    'stat-box-so-rw-added-today': 'so-rw-added-today',
+    'stat-box-so-rw-today':   'so-rw-today',
+    'stat-box-so-rw-week':    'so-rw-week',
+  }};
+  function attachClicks(attemptsLeft) {{
+    var allFound = true;
+    Object.keys(boxKeys).forEach(function(elId) {{
+      var el = doc.getElementById(elId);
+      if (el) {{
+        el.onclick = (function(k) {{ return function() {{ show(k); }}; }})(boxKeys[elId]);
+      }} else {{
+        allFound = false;
+      }}
+    }});
+    if (!allFound && attemptsLeft > 0) {{
+      setTimeout(function() {{ attachClicks(attemptsLeft - 1); }}, 200);
+    }}
+  }}
+  attachClicks(15);
+}})();
+</script>
+""", height=1, scrolling=False)
+
+
+def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_today, rw_week, radius_label):
     return f"""
 <div class="stat-row">
-  <div class="stat-box" style="flex:1;">
+  <div class="stat-box stat-box-clickable" id="stat-box-so-new-today">
+    <div class="stat-num">{new_today}</div>
+    <div class="stat-label">New Events Added Today within {radius_label} miles</div>
+  </div>
+  <div class="stat-box stat-box-clickable" id="stat-box-so-today">
     <div class="stat-num">{today_count}</div>
     <div class="stat-label">Events Today within {radius_label} miles</div>
   </div>
-  <div class="stat-box" style="flex:1;">
+  <div class="stat-box stat-box-clickable" id="stat-box-so-week">
     <div class="stat-num">{week_count}</div>
     <div class="stat-label">Events This Week within {radius_label} miles</div>
   </div>
-  <div class="stat-box" style="flex:1;">
-    <div class="stat-num">{nearby_count}</div>
-    <div class="stat-label">Events within {radius_label} miles</div>
+  <div class="stat-box stat-box-clickable" id="stat-box-so-rw-added-today">
+    <div class="stat-num">{rw_added_today}</div>
+    <div class="stat-label">New Travel Disruptions Added Today within {radius_label} miles</div>
   </div>
-  <div class="stat-box" style="flex:1;">
-    <div class="stat-num">{total_db}</div>
-    <div class="stat-label">Events in Database</div>
+  <div class="stat-box stat-box-clickable" id="stat-box-so-rw-today">
+    <div class="stat-num">{rw_today}</div>
+    <div class="stat-label">Travel Disruptions Today within {radius_label} miles</div>
+  </div>
+  <div class="stat-box stat-box-clickable" id="stat-box-so-rw-week">
+    <div class="stat-num">{rw_week}</div>
+    <div class="stat-label">Travel Disruptions This Week within {radius_label} miles</div>
   </div>
 </div>"""
 
@@ -1404,14 +2043,157 @@ def _count_in_date_range(df, start_date, end_date):
     matches = parsed.apply(lambda d: d is not None and start_date <= d <= end_date)
     return int(matches.sum())
 
+
+def _rows_in_date_range(df, start_date, end_date):
+    """Row-dicts from a search-result DataFrame whose event date falls
+    within [start_date, end_date] — same column detection as
+    _count_in_date_range, but returns the matching rows themselves so they
+    can power a clickable stat card's detail modal."""
+    if df is None or df.empty:
+        return []
+    col_lower = {c.lower(): c for c in df.columns}
+    date_col = (
+        col_lower.get("event_date")
+        or col_lower.get("date")
+        or col_lower.get("eventdate")
+    )
+    if not date_col:
+        return []
+    out = []
+    for _, row in df.iterrows():
+        d = _parse_date_safe(row.get(date_col))
+        if d is not None and start_date <= d <= end_date:
+            out.append(row.to_dict())
+    return out
+
+
+def _has_created_column(df):
+    """Whether a search-result DataFrame includes an insertion-timestamp
+    column (first_seen_at / Created At) — the search_within_radius RPC may
+    or may not select it."""
+    if df is None or df.empty:
+        return False
+    col_lower = {c.lower(): c for c in df.columns}
+    return any(k in col_lower for k in ("first_seen_at", "created at", "created_at", "createdat"))
+
+
+def _rows_in_created_range(df, start_date, end_date):
+    """Row-dicts from a search-result DataFrame whose insertion timestamp
+    (first_seen_at / Created At) falls within [start_date, end_date] — i.e.
+    rows newly added to the database, as opposed to _rows_in_date_range's
+    event-date filter. Empty list if there's no insertion-timestamp column."""
+    if not _has_created_column(df):
+        return []
+    col_lower = {c.lower(): c for c in df.columns}
+    created_col = (
+        col_lower.get("first_seen_at")
+        or col_lower.get("created at")
+        or col_lower.get("created_at")
+        or col_lower.get("createdat")
+    )
+    out = []
+    for _, row in df.iterrows():
+        d = _parse_date_safe(row.get(created_col))
+        if d is not None and start_date <= d <= end_date:
+            out.append(row.to_dict())
+    return out
+
+
+def _count_in_created_range(df, start_date, end_date):
+    """Count version of _rows_in_created_range. Returns '—' (rather than 0)
+    when there's no insertion-timestamp column to check, so the card reads
+    as 'unavailable' instead of falsely implying zero new events."""
+    if not _has_created_column(df):
+        return "—"
+    return len(_rows_in_created_range(df, start_date, end_date))
+
+
+def _parse_datetime_safe(val):
+    """Parse an ISO-ish datetime string into an aware UTC datetime. Returns
+    None if val is falsy or unparseable."""
+    if not val:
+        return None
+    try:
+        from dateutil import parser as _dt_parser
+        dt = _dt_parser.parse(str(val))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _roadworks_rows_in_range(df, start_date, end_date):
+    """Row-dicts from a roadworks DataFrame whose closure overlaps
+    [start_date, end_date] at any point — same overlap check as
+    get_roadworks_today_count / get_roadworks_this_week_count, applied to an
+    already-fetched, radius-scoped DataFrame instead of querying Supabase
+    directly (Search doesn't re-hit the National Highways API)."""
+    if df is None or df.empty:
+        return []
+    day_start = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    day_end   = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+
+    out = []
+    for _, row in df.iterrows():
+        s = _parse_datetime_safe(row.get("start_time"))
+        e = _parse_datetime_safe(row.get("end_time"))
+        if s is None or s > day_end:
+            continue
+        if e is not None and e < day_start:
+            continue
+        out.append(row.to_dict())
+    return out
+
+
+def _roadworks_rows_in_created_range(df, start_date, end_date):
+    """Row-dicts from a roadworks DataFrame whose insertion timestamp
+    (fetched_at) falls within [start_date, end_date] — i.e. closures newly
+    added to the database, as opposed to _roadworks_rows_in_range's
+    active-during-window overlap filter."""
+    if df is None or df.empty:
+        return []
+    col_lower = {c.lower(): c for c in df.columns}
+    created_col = (
+        col_lower.get("fetched_at")
+        or col_lower.get("created_at")
+        or col_lower.get("inserted_at")
+    )
+    if not created_col:
+        return []
+    out = []
+    for _, row in df.iterrows():
+        d = _parse_date_safe(row.get(created_col))
+        if d is not None and start_date <= d <= end_date:
+            out.append(row.to_dict())
+    return out
+
+
 stats_slot = st.empty()
-_initial_total     = get_total_events_count()
-_initial_today     = get_events_today_count()
-_initial_this_week = get_events_this_week_count()
+_events_total_initial    = get_total_events_count()
+_roadworks_total_initial = get_total_roadworks_count()
+_initial_total = (
+    _events_total_initial + _roadworks_total_initial
+    if isinstance(_events_total_initial, int) and isinstance(_roadworks_total_initial, int)
+    else "—"
+)
+_initial_today            = get_events_today_count()
+_initial_this_week        = get_events_this_week_count()
+_initial_roadworks_today  = get_roadworks_today_count()
+_initial_roadworks_week   = get_roadworks_this_week_count()
+_stat_categories = {
+    "total":        get_newest_combined(10),
+    "events-today": get_newest_events(10, "today"),
+    "events-week":  get_newest_events(10, "week"),
+    "rw-today":     get_newest_roadworks(10, "today"),
+    "rw-week":      get_newest_roadworks(10, "week"),
+}
 stats_slot.markdown(
-    _stat_row_initial(_initial_total, _initial_today, _initial_this_week),
+    _stat_row_initial(_initial_total, _initial_today, _initial_this_week,
+                       _initial_roadworks_today, _initial_roadworks_week),
     unsafe_allow_html=True
 )
+render_stat_category_modals(_stat_categories)
 
 # Reserve the footer slot immediately so it is always in the DOM,
 # even while the fetch progress bar is updating.
@@ -1608,9 +2390,10 @@ def burdy_new_events_modal(events):
 """, height=1, scrolling=False)
 
 
-def burdy_error(message):
+def burdy_error(message, title="Invalid Postcode"):
     """Inject a Burdy-styled modal directly into the parent page DOM so it overlays everything."""
     safe = message.replace("'", "\\'").replace("\n", " ")
+    safe_title = title.replace("'", "\\'").replace("\n", " ")
     unique = int(time.time() * 1000)
     components.html(f"""
 <script>
@@ -1668,6 +2451,7 @@ def burdy_error(message):
       letter-spacing: -.02em;
       color: #141518;
       margin-bottom: 8px;
+      text-align: center;
     }}
     #burdy-error-modal .bm-msg {{
       font-family: 'DM Sans', sans-serif;
@@ -1675,6 +2459,7 @@ def burdy_error(message):
       color: #6B7280;
       line-height: 1.65;
       margin-bottom: 24px;
+      text-align: center;
     }}
     #burdy-error-modal .bm-btn {{
       font-family: 'Syne', sans-serif;
@@ -1709,7 +2494,7 @@ def burdy_error(message):
   modal.id = 'burdy-error-modal';
   modal.innerHTML = `
     <div class="bm">
-      <div class="bm-title">Invalid Postcode</div>
+      <div class="bm-title">{safe_title}</div>
       <div class="bm-msg">{safe}</div>
       <div style="text-align:center;"><button class="bm-btn" id="burdy-dismiss">Dismiss</button></div>
     </div>
@@ -3655,6 +4440,57 @@ def _bounding_box(lat: float, lon: float, radius_miles: float):
     return lat - lat_delta, lat + lat_delta, lon - lon_delta, lon + lon_delta
 
 
+def get_new_events_within_radius(lat, lon, radius, start_date, end_date):
+    """New events (by insertion timestamp — first_seen_at — not their own
+    event date) within `radius` miles of (lat, lon), inserted between
+    start_date and end_date inclusive.
+
+    Queries Supabase directly rather than reusing search_within_radius's
+    results, since that RPC (a) filters out anything before 'now' server-side
+    — a newly-inserted event with a past date would be silently dropped —
+    and (b) its column list is fixed for display purposes, with no guarantee
+    it includes first_seen_at at all. This mirrors get_roadworks_within_radius's
+    bounding-box-then-precise-filter approach so 'added today' always
+    reflects everything added anywhere within radius today, by anyone's
+    search, not just rows touched by the current run."""
+    start_iso = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc).isoformat()
+    end_iso   = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc).isoformat()
+
+    try:
+        lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
+        all_rows  = []
+        offset    = 0
+        page_size = 1000
+        while True:
+            resp = (
+                supabase.table("BurdySteupTest")
+                .select("*")
+                .gte("Latitude", lat_min).lte("Latitude", lat_max)
+                .gte("Longitude", lon_min).lte("Longitude", lon_max)
+                .gte("first_seen_at", start_iso).lte("first_seen_at", end_iso)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            batch = resp.data or []
+            all_rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+    except Exception as e:
+        st.warning(f"Couldn't check for new events: {e}")
+        return []
+
+    nearby = []
+    for r in all_rows:
+        rlat, rlon = r.get("Latitude"), r.get("Longitude")
+        if rlat is None or rlon is None:
+            continue
+        dist = haversine_miles(lat, lon, rlat, rlon)
+        if dist <= radius:
+            nearby.append(r)
+    return nearby
+
+
 def get_roadworks_within_radius(lat, lon, radius):
     """Read closures from Supabase within a bounding box around (lat, lon),
     then filter to the precise `radius` miles client-side. Previously this
@@ -3760,7 +4596,7 @@ if find_events:
     _abort = False
 
     if not postcode:
-        st.warning("Enter a postcode")
+        burdy_error("Please enter a postcode to start searching", title="No Postcode Entered")
         _abort = True
 
     if not _abort:
@@ -3788,6 +4624,8 @@ if find_events:
         status   = _LoadingOverlayProxy()
 
         new_events_count = 0  # tallied from upsert_batch's own new-row counts below
+        tm_events = {}
+        sk_events = {}
 
         # ── TICKETMASTER ──
         try:
@@ -3800,7 +4638,7 @@ if find_events:
             tm_count = 0
 
         # Update stat boxes with Ticketmaster count as soon as it's known
-        stats_slot.markdown(_stat_row(tm_count, "—", "—", "—", "—", radius), unsafe_allow_html=True)
+        stats_slot.markdown(_stat_row_search("—", "—", "—", "—", "—", "—", radius), unsafe_allow_html=True)
 
         # ── SKIDDLE ──
         try:
@@ -3814,6 +4652,7 @@ if find_events:
 
         # ── ROADWORKS (National Highways) ──
         rw_count = 0
+        rw_new   = 0
         try:
             rw_events = fetch_roadworks(lat, lon, radius, status, progress)
         except RuntimeError as e:
@@ -3821,12 +4660,32 @@ if find_events:
             rw_events = []
         if rw_events:
             rw_rows = [to_roadworks_db_row(r) for r in rw_events]
+
+            # Work out how many of these are genuinely new (vs. already stored),
+            # same chunked-lookup pattern upsert_batch uses for events — the
+            # upsert itself is a blind on_conflict write and doesn't tell us.
+            all_rw_ids   = [r["record_id"] for r in rw_rows]
+            existing_ids = set()
+            for i in range(0, len(all_rw_ids), 100):
+                chunk = all_rw_ids[i:i + 100]
+                try:
+                    resp = (
+                        supabase.table(ROADWORKS_TABLE)
+                        .select("record_id")
+                        .in_("record_id", chunk)
+                        .execute()
+                    )
+                    existing_ids.update(row["record_id"] for row in (resp.data or []))
+                except Exception:
+                    pass
+            rw_new = sum(1 for r in rw_rows if r["record_id"] not in existing_ids)
+
             try:
                 supabase.table(ROADWORKS_TABLE).upsert(rw_rows, on_conflict="record_id").execute()
             except Exception as e:
                 st.warning(f"Couldn't save roadworks to Supabase: {e}")
             rw_count = len(rw_rows)
-        status.text(f"✓ Roadworks: {rw_count} closures processed")
+        status.text(f"✓ Roadworks: {rw_new} new roadworks added")
 
         # Read back everything within radius (fresh inserts + anything already stored)
         st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
@@ -3899,10 +4758,49 @@ if find_events:
         status.empty()
         progress.empty()
 
-        # Final update with all real values
+        # Final update with all real values — same 6-card layout as the
+        # Search-only flow, computed the same way from the same session_state
+        # DataFrames (search_df / roadworks_df), both of which Fetch & Sync
+        # populates just like Search does.
+        _today_date = datetime.now(timezone.utc).date()
+        _week_end   = _today_date + timedelta(days=6)
+        _search_df_local = st.session_state["search_df"]
+        _rw_df_local      = st.session_state["roadworks_df"]
+
+        _events_today_radius = _count_in_date_range(_search_df_local, _today_date, _today_date)
+        _events_week_radius  = _count_in_date_range(_search_df_local, _today_date, _week_end)
+        _new_today_rows      = get_new_events_within_radius(lat, lon, radius, _today_date, _today_date)
+
+        _rw_added_today_rows = _roadworks_rows_in_created_range(_rw_df_local, _today_date, _today_date)
+        _rw_today_rows = _roadworks_rows_in_range(_rw_df_local, _today_date, _today_date)
+        _rw_week_rows  = _roadworks_rows_in_range(_rw_df_local, _today_date, _week_end)
+
         stats_slot.markdown(
-            _stat_row(tm_count, sk_count, new_events_count, after_radius_count, after_total, radius),
+            _stat_row_search(
+                len(_new_today_rows), _events_today_radius, _events_week_radius,
+                len(_rw_added_today_rows), len(_rw_today_rows), len(_rw_week_rows), radius
+            ),
             unsafe_allow_html=True
+        )
+
+        # Make the 6 stat cards clickable, same pattern as the other stat rows
+        render_stat_category_modals(
+            {
+                "so-new-today":      _new_today_rows,
+                "so-today":          _rows_in_date_range(_search_df_local, _today_date, _today_date),
+                "so-week":           _rows_in_date_range(_search_df_local, _today_date, _week_end),
+                "so-rw-added-today": _rw_added_today_rows,
+                "so-rw-today":       _rw_today_rows,
+                "so-rw-week":        _rw_week_rows,
+            },
+            titles={
+                "so-new-today":      f"New Events Added Today within {radius} miles",
+                "so-today":          f"Events Today within {radius} miles",
+                "so-week":           f"Events This Week within {radius} miles",
+                "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
+                "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
+                "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+            },
         )
 
         # Register the new events modal listener if there are new events
@@ -3915,7 +4813,7 @@ if find_events:
 
 if search_db:
     if not postcode:
-        st.warning("Enter a postcode first")
+        burdy_error("Please enter a postcode to start searching", title="No Postcode Entered")
     else:
         lat, lon, postcode_info = get_location(postcode)
         if lat is None:
@@ -3973,17 +4871,47 @@ if search_db:
             )
 
             update_loading_overlay(percent=0.75, message="Finishing up…")
-            _search_total = get_total_events_count()
 
             _today_date = datetime.now(timezone.utc).date()
             _week_end   = _today_date + timedelta(days=6)
-            _events_today_radius = _count_in_date_range(st.session_state["search_df"], _today_date, _today_date)
-            _events_week_radius  = _count_in_date_range(st.session_state["search_df"], _today_date, _week_end)
+            _search_df_local = st.session_state["search_df"]
+            _rw_df_local      = st.session_state["roadworks_df"]
+
+            _events_today_radius = _count_in_date_range(_search_df_local, _today_date, _today_date)
+            _events_week_radius  = _count_in_date_range(_search_df_local, _today_date, _week_end)
+            _new_today_rows      = get_new_events_within_radius(lat, lon, radius, _today_date, _today_date)
+
+            _rw_added_today_rows = _roadworks_rows_in_created_range(_rw_df_local, _today_date, _today_date)
+            _rw_today_rows = _roadworks_rows_in_range(_rw_df_local, _today_date, _today_date)
+            _rw_week_rows  = _roadworks_rows_in_range(_rw_df_local, _today_date, _week_end)
             update_loading_overlay(percent=1.0, message="Done")
 
             stats_slot.markdown(
-                _stat_row_search(_events_today_radius, _events_week_radius, len(rows), _search_total, radius),
+                _stat_row_search(
+                    len(_new_today_rows), _events_today_radius, _events_week_radius,
+                    len(_rw_added_today_rows), len(_rw_today_rows), len(_rw_week_rows), radius
+                ),
                 unsafe_allow_html=True
+            )
+
+            # Make the 6 stat cards clickable, same pattern as the other stat rows
+            render_stat_category_modals(
+                {
+                    "so-new-today":      _new_today_rows,
+                    "so-today":          _rows_in_date_range(_search_df_local, _today_date, _today_date),
+                    "so-week":           _rows_in_date_range(_search_df_local, _today_date, _week_end),
+                    "so-rw-added-today": _rw_added_today_rows,
+                    "so-rw-today":       _rw_today_rows,
+                    "so-rw-week":        _rw_week_rows,
+                },
+                titles={
+                    "so-new-today":      f"New Events Added Today within {radius} miles",
+                    "so-today":          f"Events Today within {radius} miles",
+                    "so-week":           f"Events This Week within {radius} miles",
+                    "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
+                    "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
+                    "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+                },
             )
 
 df    = st.session_state.get("search_df", pd.DataFrame())
@@ -4000,9 +4928,11 @@ if not _results_committed:
     st.session_state["search_label"]  = ""
     st.session_state["roadworks_df"]  = pd.DataFrame()
     stats_slot.markdown(
-        _stat_row_initial(_initial_total, _initial_today, _initial_this_week),
+        _stat_row_initial(_initial_total, _initial_today, _initial_this_week,
+                           _initial_roadworks_today, _initial_roadworks_week),
         unsafe_allow_html=True
     )
+    render_stat_category_modals(_stat_categories)
 
 # ── Postcode info panel ──
 # Skipped here if we already rendered it immediately above (a fresh search
