@@ -237,7 +237,7 @@ div[data-testid="stAlert"][kind="warning"] {
 hr {
     border: none !important;
     border-top: 1px solid var(--border) !important;
-    margin: 28px 0 !important;
+    margin: 0 !important;
 }
 h3 {
     font-family: 'Syne', sans-serif !important;
@@ -283,6 +283,49 @@ h3 {
     color: var(--text-dim);
     letter-spacing: .08em;
     text-transform: uppercase;
+}
+
+.pci-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,.05);
+}
+.pci-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--orange), var(--green), transparent);
+}
+.pci-heading {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+}
+.pci-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px 32px;
+}
+.pci-field-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+.pci-field-value {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
 }
 
 .burdy-footer {
@@ -1265,6 +1308,20 @@ def _stat_row_initial(total, today, this_week):
   </div>
 </div>"""
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_total_events_count():
+    """Total row count in BurdySteupTest, cached for 60s. This exact query was
+    previously run fresh (uncached) at the top of every script rerun, plus
+    again before and after every search just to compute a before/after
+    difference — all hitting the same table for the same number. Cached here
+    and reused everywhere; call .clear() right after an insert if a
+    guaranteed-fresh read is needed at that specific point."""
+    try:
+        return supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
+    except Exception:
+        return "—"
+
+@st.cache_data(ttl=60, show_spinner=False)
 def get_events_today_count():
     try:
         _today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1273,6 +1330,7 @@ def get_events_today_count():
     except Exception:
         return "—"
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_events_this_week_count():
     try:
         _today     = datetime.now(timezone.utc).date()
@@ -1347,10 +1405,7 @@ def _count_in_date_range(df, start_date, end_date):
     return int(matches.sum())
 
 stats_slot = st.empty()
-try:
-    _initial_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
-except Exception:
-    _initial_total = "—"
+_initial_total     = get_total_events_count()
 _initial_today     = get_events_today_count()
 _initial_this_week = get_events_this_week_count()
 stats_slot.markdown(
@@ -1680,6 +1735,216 @@ def burdy_error(message):
 """, height=1, scrolling=False)
 
 
+_overlay_create_slot  = None  # dedicated placeholder for the one-time overlay creation
+_overlay_percent_slot = None  # separate, reused placeholder for percent updates only
+_overlay_message_slot = None  # separate, reused placeholder for message updates only
+
+
+def show_loading_overlay(message="Talking to Ticketmaster, Skiddle and National Highways…"):
+    """Inject a full-page loading overlay (card + spinner) into the parent
+    document, sitting on top of the whole page, until hide_loading_overlay()
+    removes it. Same DOM-injection approach as burdy_error. Renders into a
+    single reused placeholder (_overlay_create_slot) that update_loading_overlay()
+    never touches — replacing this slot from an update call before the browser
+    finishes loading/running this script would remove the overlay before it's
+    even created, so creation and updates use separate slots."""
+    global _overlay_create_slot
+    _overlay_create_slot = st.empty()
+    safe = message.replace("'", "\\'").replace("\n", " ")
+    with _overlay_create_slot.container():
+        components.html(f"""
+<script>
+(function() {{
+  var old = window.parent.document.getElementById('burdy-loading-overlay');
+  if (old) old.remove();
+
+  if (!window.parent.document.getElementById('burdy-fonts')) {{
+    var link = window.parent.document.createElement('link');
+    link.id = 'burdy-fonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap';
+    window.parent.document.head.appendChild(link);
+  }}
+
+  var css = `
+    #burdy-loading-overlay {{
+      position: fixed;
+      inset: 0;
+      background: rgba(20,21,24,.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999999;
+      animation: burdyLoadFadeIn .18s ease;
+    }}
+    @keyframes burdyLoadFadeIn {{ from {{ opacity:0 }} to {{ opacity:1 }} }}
+    #burdy-loading-overlay .lb {{
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 48px;
+      max-width: 340px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.10);
+      animation: burdySlideUp .2s ease;
+    }}
+    @keyframes burdySlideUp {{ from {{ transform:translateY(16px);opacity:0 }} to {{ transform:translateY(0);opacity:1 }} }}
+    #burdy-loading-overlay .lb::before {{
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #E8520A, #179948, transparent);
+    }}
+    #burdy-loading-overlay .spinner-wrap {{
+      position: relative;
+      width: 52px; height: 52px;
+      margin: 0 auto 16px;
+    }}
+    #burdy-loading-overlay .spinner {{
+      position: absolute; inset: 0;
+      border: 3px solid #F0F1F4;
+      border-top-color: #E8520A;
+      border-radius: 50%;
+      animation: burdySpin .8s linear infinite;
+    }}
+    @keyframes burdySpin {{ to {{ transform: rotate(360deg); }} }}
+    #burdy-loading-overlay .spinner-icon {{
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 26px; height: 26px;
+      object-fit: contain;
+      border-radius: 50%;
+    }}
+    #burdy-loading-overlay .lb-percent {{
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -.02em;
+      color: #E8520A;
+      margin-bottom: 10px;
+    }}
+    #burdy-loading-overlay .lb-title {{
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -.02em;
+      color: #141518;
+      margin-bottom: 6px;
+    }}
+    #burdy-loading-overlay .lb-msg {{
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      color: #6B7280;
+      line-height: 1.5;
+      min-height: 34px;
+    }}
+  `;
+
+  var style = window.parent.document.createElement('style');
+  style.id = 'burdy-loading-style';
+  var oldStyle = window.parent.document.getElementById('burdy-loading-style');
+  if (oldStyle) oldStyle.remove();
+  style.textContent = css;
+  window.parent.document.head.appendChild(style);
+
+  var overlay = window.parent.document.createElement('div');
+  overlay.id = 'burdy-loading-overlay';
+  overlay.innerHTML = `
+    <div class="lb">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <img class="spinner-icon" src="{ICON_URL}" />
+      </div>
+      <div class="lb-percent" id="burdy-loading-percent">0%</div>
+      <div class="lb-title">Finding your events</div>
+      <div class="lb-msg" id="burdy-loading-msg">{safe}</div>
+    </div>
+  `;
+  window.parent.document.body.appendChild(overlay);
+}})();
+</script>
+""", height=1, scrolling=False)
+
+
+def update_loading_overlay(percent=None, message=None):
+    """Update the percent readout and/or message text of an already-visible
+    loading overlay, in place. Percent and message each get their OWN reused
+    placeholder — sharing one slot between them meant a message update
+    (called every loop iteration with no delay before it) would tear down a
+    pending percent update's iframe before it ever got to run in the
+    browser, so percent silently never changed while messages worked fine.
+    Separate slots mean neither can cancel the other."""
+    global _overlay_percent_slot, _overlay_message_slot
+
+    if percent is not None:
+        pct = max(0, min(100, round(percent * 100)))
+        if _overlay_percent_slot is None:
+            _overlay_percent_slot = st.empty()
+        with _overlay_percent_slot.container():
+            components.html(f"""
+<script>
+(function() {{
+  var pctEl = window.parent.document.getElementById('burdy-loading-percent');
+  if (pctEl) pctEl.textContent = '{pct}%';
+}})();
+</script>
+""", height=1, scrolling=False)
+
+    if message is not None:
+        safe_msg = str(message).replace("'", "\\'").replace("\n", " ")
+        if _overlay_message_slot is None:
+            _overlay_message_slot = st.empty()
+        with _overlay_message_slot.container():
+            components.html(f"""
+<script>
+(function() {{
+  var msgEl = window.parent.document.getElementById('burdy-loading-msg');
+  if (msgEl) msgEl.textContent = '{safe_msg}';
+}})();
+</script>
+""", height=1, scrolling=False)
+
+
+class _LoadingOverlayProxy:
+    """Drop-in replacement for the st.progress()/st.empty() objects normally
+    passed into fetch_ticketmaster/fetch_skiddle/fetch_roadworks. Those
+    functions already call .progress(value) and .text(message) at each
+    stage — this redirects those exact same calls into the loading overlay's
+    percent readout and message, instead of a now-hidden native widget."""
+    def progress(self, value):
+        update_loading_overlay(percent=value)
+
+    def text(self, message):
+        update_loading_overlay(message=message)
+
+    def empty(self):
+        pass  # no-op — the overlay is dismissed by hide_loading_overlay() instead
+
+
+def hide_loading_overlay():
+    """Remove the overlay injected by show_loading_overlay(), with a short
+    fade so it doesn't just vanish abruptly."""
+    global _overlay_message_slot
+    if _overlay_message_slot is None:
+        _overlay_message_slot = st.empty()
+    with _overlay_message_slot.container():
+        components.html("""
+<script>
+(function() {
+  var overlay = window.parent.document.getElementById('burdy-loading-overlay');
+  if (overlay) {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity .2s ease';
+    setTimeout(function() { overlay.remove(); }, 200);
+  }
+})();
+</script>
+""", height=1, scrolling=False)
+
+
 def classify_postcode(raw):
     """Return 'uk' if the format matches a UK postcode, else 'non_uk'."""
     import re
@@ -1687,6 +1952,60 @@ def classify_postcode(raw):
     if re.fullmatch(r"[A-Z]{1,2}[0-9][0-9A-Z]?[0-9][A-Z]{2}", pc):
         return "uk"
     return "non_uk"
+
+
+def render_postcode_info_panel(pci):
+    """Render the Postcode Intelligence card for a given postcode_info dict.
+    Pulled out into its own function so it can be called immediately after
+    get_location() resolves (fast — one API call) rather than only after the
+    full Ticketmaster/Skiddle/Roadworks pipeline finishes, which is what
+    used to gate this box and made it feel like the "search" step itself
+    was slow when really it was waiting on unrelated work."""
+    if not pci:
+        return
+
+    def _pci_field(label, value):
+        if not value or value == "—":
+            return ""
+        return f"""<div><div class="pci-field-label">{label}</div><div class="pci-field-value">{value}</div></div>"""
+
+    council_name = pci.get("admin_district") or "—"
+    council_code = pci.get("admin_district_code") or "—"
+    county       = pci.get("admin_county") or "—"
+    ward         = pci.get("admin_ward") or "—"
+    parish       = pci.get("parish") or "—"
+    region       = pci.get("region") or "—"
+    country      = pci.get("country") or "—"
+    constituency = pci.get("parliamentary_constituency") or "—"
+    nhs_ha       = pci.get("nhs_ha") or "—"
+    postcode_fmt = pci.get("postcode") or "—"
+
+    field_entries = list(filter(None, [
+        _pci_field("Council",             council_name),
+        _pci_field("Council Code",        council_code),
+        _pci_field("County",              county),
+        _pci_field("Ward",                ward),
+        _pci_field("Parish",              parish),
+        _pci_field("Region",              region),
+        _pci_field("Country",             country),
+        _pci_field("Constituency",        constituency),
+        _pci_field("NHS Health Authority", nhs_ha),
+    ]))
+    fields_html = "".join(field_entries)
+
+    # Plain st.markdown straight into the main page's DOM — same approach as
+    # the stat cards above (_stat_row), styled via the global stylesheet's
+    # .pci-* classes. No iframe, no height to calculate: it just flows and
+    # resizes naturally with its content and the browser width, exactly like
+    # the stat cards do, and the divider below it always lands in the right
+    # place since Streamlit's normal layout never gets out of sync with it.
+    card_html = f"""
+<div class="pci-card">
+  <div class="pci-heading">{postcode_fmt} Area Information</div>
+  <div class="pci-fields">{fields_html}</div>
+</div>
+"""
+    st.markdown(card_html, unsafe_allow_html=True)
 
 
 def get_location(postcode_input):
@@ -1796,7 +2115,9 @@ def fetch_weather_forecast(lat, lon):
 
 
 def upsert_batch(events_dict, strip_keys=None):
-    """Upsert a dict of events, preserving first_seen_at / Created At on existing rows."""
+    """Upsert a dict of events, preserving first_seen_at / Created At on existing rows.
+    Returns (total_processed, new_count) — new_count lets callers report how many
+    brand-new rows were added without a separate before/after COUNT(*) query."""
     strip_keys = strip_keys or set()
     now        = datetime.now(timezone.utc).isoformat()
     batch = [
@@ -1806,7 +2127,7 @@ def upsert_batch(events_dict, strip_keys=None):
         for e in events_dict.values()
     ]
     if not batch:
-        return 0
+        return 0, 0
 
     # Chunk ID lookup to avoid URL length limits
     all_ids      = [r["ID"] for r in batch]
@@ -1835,7 +2156,7 @@ def upsert_batch(events_dict, strip_keys=None):
     if update_rows:
         supabase.table("BurdySteupTest").upsert(update_rows, on_conflict="ID").execute()
 
-    return len(batch)
+    return len(batch), len(new_rows)
 
 
 # =====================================================
@@ -2154,8 +2475,14 @@ def score_label(score):
 
 
 def add_impact_scores(df):
-    """Add Impact Score and Rating columns to a dataframe of events."""
+    """Add Impact Score and Rating columns to a dataframe of events. Safe to
+    call repeatedly on the same dataframe — if it's already scored (e.g.
+    filtered_df is scored once per rerun, then passed straight into
+    render_calendar / render_table, which used to blindly re-score it again),
+    this skips the row-wise recompute entirely instead of doing it twice."""
     if df.empty:
+        return df
+    if "Impact Score" in df.columns and "Rating" in df.columns:
         return df
     df = df.copy()
 
@@ -3227,6 +3554,30 @@ def to_roadworks_db_row(summary):
     return row
 
 
+def _round_to_bucket(dt, minutes=15):
+    """Round a datetime down to the nearest `minutes` bucket. Used so nearby
+    searches share the same cache key instead of each computing its own
+    unique 'now' (which would defeat caching entirely, since datetime.now()
+    is different on every call)."""
+    discard = timedelta(minutes=dt.minute % minutes,
+                         seconds=dt.second,
+                         microseconds=dt.microsecond)
+    return dt - discard
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _fetch_nh_closures_cached(subscription_key, closure_type, start, end):
+    """Materializes the FULL nationwide National Highways closures feed for
+    a given closure_type/date-window into a list, cached for 15 minutes.
+    This is the expensive part — paginating the entire UK dataset with a
+    rate-limit-respecting pause between every page. Previously this ran
+    fresh on every single search regardless of postcode, even though the
+    underlying national data barely changes minute to minute. Distance
+    filtering to the user's specific radius still happens per-search,
+    client-side, on this cached list — no extra network calls."""
+    return list(fetch_nh_closures(subscription_key, closure_type=closure_type, start=start, end=end))
+
+
 def fetch_roadworks(lat, lon, radius, status, progress):
     """Fetch National Highways closures (planned + unplanned) near lat/lon
     within `radius` miles. Mirrors the fetch_ticketmaster / fetch_skiddle
@@ -3235,7 +3586,7 @@ def fetch_roadworks(lat, lon, radius, status, progress):
         status.text("⚠ Roadworks skipped — add NH_API_KEY to secrets")
         return []
 
-    now = datetime.now(timezone.utc)
+    now = _round_to_bucket(datetime.now(timezone.utc))
     windows = [
         ("unplanned", now - timedelta(hours=ROADWORKS_HOURS_BACK), now),
         ("planned",   now, now + timedelta(days=ROADWORKS_DAYS_AHEAD)),
@@ -3248,7 +3599,7 @@ def fetch_roadworks(lat, lon, radius, status, progress):
         start = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
         end   = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
         try:
-            for record in fetch_nh_closures(NH_API_KEY, closure_type=ctype, start=start, end=end):
+            for record in _fetch_nh_closures_cached(NH_API_KEY, ctype, start, end):
                 summary = summarize_roadworks_record(record, lat, lon, radius, ctype)
                 # The unplanned/planned windows can both match an ongoing closure
                 # (or the API's own paging can resurface a record) — keep only the
@@ -3264,16 +3615,25 @@ def fetch_roadworks(lat, lon, radius, status, progress):
     return results
 
 
-def table_fetch_all(table_name: str, select: str = "*", page_size: int = 1000) -> list:
-    """Read a Supabase table with .range() paging until all rows are returned,
-    bypassing the default 1 000-row cap. Same approach as rpc_fetch_all, but
-    for a plain table select instead of an RPC call."""
+def table_fetch_bbox(table_name: str, lat_col: str, lon_col: str,
+                      lat_min: float, lat_max: float,
+                      lon_min: float, lon_max: float,
+                      select: str = "*", page_size: int = 1000) -> list:
+    """Same paging approach as table_fetch_all, but applies a lat/lon bounding
+    box server-side (via .gte()/.lte()) before paging, so only rows anywhere
+    near the search area are ever pulled over the network. This table has no
+    PostGIS radius RPC like BurdySteupTest's search_within_radius, so a
+    rectangular bounding box is the pre-filter — the exact circular radius
+    is still applied afterward client-side, since the box's corners can
+    fall slightly outside the true radius."""
     all_rows = []
     offset = 0
     while True:
         resp = (
             supabase.table(table_name)
             .select(select)
+            .gte(lat_col, lat_min).lte(lat_col, lat_max)
+            .gte(lon_col, lon_min).lte(lon_col, lon_max)
             .range(offset, offset + page_size - 1)
             .execute()
         )
@@ -3285,12 +3645,30 @@ def table_fetch_all(table_name: str, select: str = "*", page_size: int = 1000) -
     return all_rows
 
 
+def _bounding_box(lat: float, lon: float, radius_miles: float):
+    """Rough lat/lon bounding box for a given radius in miles. 1 degree of
+    latitude is ~69 miles everywhere; 1 degree of longitude shrinks with
+    cos(latitude), so it's widened accordingly (guarded against 0 near the
+    poles, though irrelevant for UK postcodes)."""
+    lat_delta = radius_miles / 69.0
+    lon_delta = radius_miles / (69.0 * max(math.cos(math.radians(lat)), 0.01))
+    return lat - lat_delta, lat + lat_delta, lon - lon_delta, lon + lon_delta
+
+
 def get_roadworks_within_radius(lat, lon, radius):
-    """Read every stored closure from Supabase and filter to those within
-    `radius` miles of (lat, lon), computing distance client-side (this table
-    has no PostGIS radius RPC like BurdySteupTest does)."""
+    """Read closures from Supabase within a bounding box around (lat, lon),
+    then filter to the precise `radius` miles client-side. Previously this
+    pulled the ENTIRE roadworks table on every search before filtering —
+    fine when the table was small, but it only grows over time (every past
+    search adds more rows), so it got slower and slower. The bounding-box
+    pre-filter keeps the amount of data pulled roughly constant regardless
+    of how large the table gets."""
     try:
-        rows = table_fetch_all(ROADWORKS_TABLE, "*")
+        lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
+        rows = table_fetch_bbox(
+            ROADWORKS_TABLE, "latitude", "longitude",
+            lat_min, lat_max, lon_min, lon_max,
+        )
     except Exception as e:
         st.warning(f"Couldn't read {ROADWORKS_TABLE} from Supabase: {e}")
         return pd.DataFrame()
@@ -3375,6 +3753,9 @@ def get_all_time_events_within_radius(lat, lon, radius, type_filters=None, venue
 # FIND & SYNC ALL EVENTS
 # =====================================================
 
+_pci_shown_early = False
+_loading_active  = False
+
 if find_events:
     _abort = False
 
@@ -3392,17 +3773,27 @@ if find_events:
             _abort = True
         else:
             st.session_state["postcode_info"] = postcode_info
+            # Show this immediately — it only depends on the postcode lookup
+            # above (one fast API call), not on the Ticketmaster/Skiddle/
+            # Roadworks pipeline that's about to start below. Previously it
+            # was gated behind that whole pipeline finishing, which made the
+            # search feel much slower than the postcode step itself actually was.
+            render_postcode_info_panel(postcode_info)
+            _pci_shown_early = True
 
     if not _abort:
-        progress = st.progress(0)
-        status   = st.empty()
+        show_loading_overlay()
+        _loading_active = True
+        progress = _LoadingOverlayProxy()
+        status   = _LoadingOverlayProxy()
 
-        before_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
+        new_events_count = 0  # tallied from upsert_batch's own new-row counts below
 
         # ── TICKETMASTER ──
         try:
             tm_events = fetch_ticketmaster(lat, lon, radius, status, progress)
-            tm_count  = upsert_batch(tm_events)
+            tm_count, tm_new = upsert_batch(tm_events)
+            new_events_count += tm_new
             status.text(f"✓ Ticketmaster: {tm_count} events processed")
         except RuntimeError as e:
             st.error(str(e))
@@ -3414,7 +3805,8 @@ if find_events:
         # ── SKIDDLE ──
         try:
             sk_events = fetch_skiddle(lat, lon, radius, status, progress)
-            sk_count  = upsert_batch(sk_events, strip_keys=SKIDDLE_ONLY)
+            sk_count, sk_new = upsert_batch(sk_events, strip_keys=SKIDDLE_ONLY)
+            new_events_count += sk_new
             status.text(f"✓ Skiddle: {sk_count} events processed")
         except RuntimeError as e:
             st.error(str(e))
@@ -3447,7 +3839,11 @@ if find_events:
         progress.progress(1.0)
 
         # ── AFTER COUNTS ──
-        after_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count
+        # Bust the cache here specifically so "Total in Database" reflects the
+        # rows just inserted above, rather than a stale value from before this
+        # search — everywhere else in the app is happy to reuse the 60s cache.
+        get_total_events_count.clear()
+        after_total = get_total_events_count()
         after_radius_count = supabase.rpc(
             "count_within_radius",
             {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
@@ -3474,7 +3870,6 @@ if find_events:
         st.session_state.pop("calendar_year", None)
         st.session_state.pop("calendar_month", None)
 
-        new_events_count = after_total - before_total
         st.session_state["new_events_count"] = new_events_count
 
         log_search_event(
@@ -3530,6 +3925,13 @@ if search_db:
                 burdy_error("Postcode not found. Please check the postcode and try again.")
         else:
             st.session_state["postcode_info"] = postcode_info
+            render_postcode_info_panel(postcode_info)
+            _pci_shown_early = True
+
+            show_loading_overlay("Searching stored events near you…")
+            _loading_active = True
+
+            update_loading_overlay(percent=0.25, message="Searching stored events…")
             rows = rpc_fetch_all(
                 "search_within_radius",
                 {"lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
@@ -3551,6 +3953,7 @@ if search_db:
             st.session_state.pop("calendar_year", None)
             st.session_state.pop("calendar_month", None)
 
+            update_loading_overlay(percent=0.5, message="Checking nearby roadworks…")
             # Just re-read whatever roadworks are already stored within radius —
             # Search doesn't hit the National Highways API (that only happens on Fetch & Sync)
             st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
@@ -3569,15 +3972,14 @@ if search_db:
                 results_count=len(rows),
             )
 
-            try:
-                _search_total = supabase.table("BurdySteupTest").select("ID", count="exact").execute().count or 0
-            except Exception:
-                _search_total = "—"
+            update_loading_overlay(percent=0.75, message="Finishing up…")
+            _search_total = get_total_events_count()
 
             _today_date = datetime.now(timezone.utc).date()
             _week_end   = _today_date + timedelta(days=6)
             _events_today_radius = _count_in_date_range(st.session_state["search_df"], _today_date, _today_date)
             _events_week_radius  = _count_in_date_range(st.session_state["search_df"], _today_date, _week_end)
+            update_loading_overlay(percent=1.0, message="Done")
 
             stats_slot.markdown(
                 _stat_row_search(_events_today_radius, _events_week_radius, len(rows), _search_total, radius),
@@ -3603,93 +4005,13 @@ if not _results_committed:
     )
 
 # ── Postcode info panel ──
+# Skipped here if we already rendered it immediately above (a fresh search
+# this run) — this path exists for ordinary reruns that don't go through
+# `if find_events:` at all (e.g. calendar month navigation, filter changes),
+# where postcode_info is already sitting in session_state from an earlier run.
 _pci = st.session_state.get("postcode_info") if _results_committed else None
-if _pci:
-    def _pci_field(label, value):
-        if not value or value == "—":
-            return ""
-        return f"""<div><div class="field-label">{label}</div><div class="field-value">{value}</div></div>"""
-
-    council_name = _pci.get("admin_district") or "—"
-    council_code = _pci.get("admin_district_code") or "—"
-    county       = _pci.get("admin_county") or "—"
-    ward         = _pci.get("admin_ward") or "—"
-    parish       = _pci.get("parish") or "—"
-    region       = _pci.get("region") or "—"
-    country      = _pci.get("country") or "—"
-    constituency = _pci.get("parliamentary_constituency") or "—"
-    nhs_ha       = _pci.get("nhs_ha") or "—"
-    postcode_fmt = _pci.get("postcode") or "—"
-
-    fields_html = "".join(filter(None, [
-        _pci_field("Postcode",            postcode_fmt),
-        _pci_field("Council",             council_name),
-        _pci_field("Council Code",        council_code),
-        _pci_field("County",              county),
-        _pci_field("Ward",                ward),
-        _pci_field("Parish",              parish),
-        _pci_field("Region",              region),
-        _pci_field("Country",             country),
-        _pci_field("Constituency",        constituency),
-        _pci_field("NHS Health Authority", nhs_ha),
-    ]))
-
-    _card_html = f"""<!DOCTYPE html><html><head>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
-<style>
-* {{ box-sizing:border-box; margin:0; padding:0; }}
-html, body {{ background:transparent; overflow:hidden; }}
-.card {{
-    background:#fff;
-    border:1px solid rgba(0,0,0,.09);
-    border-radius:14px;
-    padding:20px 24px;
-    position:relative;
-    overflow:hidden;
-    box-shadow:0 2px 10px rgba(0,0,0,.05);
-}}
-.card::before {{
-    content:'';
-    position:absolute;
-    top:0;left:0;right:0;height:3px;
-    background:linear-gradient(90deg,#E8520A,#179948,transparent);
-}}
-.heading {{
-    font-family:'DM Mono',monospace;
-    font-size:10px;
-    letter-spacing:.1em;
-    text-transform:uppercase;
-    color:#A0A7B4;
-    margin-bottom:14px;
-}}
-.fields {{
-    display:flex;
-    flex-wrap:wrap;
-    gap:20px 32px;
-}}
-.field-label {{
-    font-family:'DM Mono',monospace;
-    font-size:9px;
-    letter-spacing:.1em;
-    text-transform:uppercase;
-    color:#A0A7B4;
-    margin-bottom:2px;
-}}
-.field-value {{
-    font-family:'DM Sans',sans-serif;
-    font-size:13px;
-    font-weight:500;
-    color:#141518;
-}}
-</style>
-</head><body>
-<div class="card">
-  <div class="heading">&#9670; &nbsp;Postcode Intelligence</div>
-  <div class="fields">{fields_html}</div>
-</div>
-</body></html>"""
-
-    components.html(_card_html, height=110, scrolling=False)
+if _pci and not _pci_shown_early:
+    render_postcode_info_panel(_pci)
 # ── Helper: run a filtered Supabase query ──
 def run_filtered_query(lat, lon, radius, type_filters=None, venue_filters=None):
     params = {
@@ -3970,3 +4292,10 @@ if not df.empty:
             lon=st.session_state.get("_search_lon"),
             all_events_df=st.session_state.get("all_events_df", pd.DataFrame()),
         )
+
+# Hide the loading overlay only now — after whichever pipeline ran (Fetch &
+# Sync or Search) AND the calendar/list/map view have both finished
+# rendering, so it covers the whole "click → page is fully ready" window
+# rather than disappearing as soon as the data fetch itself completes.
+if _loading_active:
+    hide_loading_overlay()
