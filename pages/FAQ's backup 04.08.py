@@ -26,7 +26,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
 
 :root {
     --orange:      #E8520A;
@@ -76,7 +76,7 @@ html, body, [class*="css"] {
 
 .burdy-logo {
     display: flex; align-items: center; gap: 12px;
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Syne', sans-serif;
     font-weight: 800; font-size: 24px;
     letter-spacing: -.03em; color: var(--text);
 }
@@ -111,7 +111,21 @@ html, body, [class*="css"] {
     background: linear-gradient(90deg, var(--orange), var(--green), transparent);
 }
 .stButton > button {
-    font-family: 'DM Sans', sans-serif !important;
+    font-family: 'Syne', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 12px !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase !important;
+    border-radius: 8px !important;
+    padding: 10px 22px !important;
+    transition: all .2s !important;
+    width: 100% !important;
+    background: var(--orange) !important;
+    color: #fff !important;
+    border: none !important;
+    box-shadow: 0 3px 14px var(--orange-glow) !important;
+}
+.stButton > button:hover {
     background: var(--orange-dim) !important;
     box-shadow: 0 5px 20px rgba(232,82,10,.3) !important;
     transform: translateY(-1px) !important;
@@ -120,23 +134,6 @@ hr {
     border: none !important;
     border-top: 1px solid var(--border) !important;
     margin: 20px 0 !important;
-}
-/* ── Section heading — identical to Contact Us / About Us ── */
-.section-heading {
-    font-family: 'DM Sans', sans-serif;
-    font-weight: 700;
-    font-size: 20px;
-    letter-spacing: -.02em;
-    color: var(--text);
-    text-align: center;
-    margin: 8px 0 24px;
-}
-h3 {
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 18px !important;
-    letter-spacing: -.02em !important;
-    color: var(--text) !important;
 }
 
 /* ── FAQ accordion items ── */
@@ -150,7 +147,7 @@ h3 {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Syne', sans-serif;
     font-weight: 700;
     font-size: 15px;
     letter-spacing: -.01em;
@@ -519,7 +516,8 @@ st.markdown(f"""
 # =====================================================
 
 st.markdown("""
-<div class="section-heading">
+<div style="font-family:'Syne',sans-serif;font-weight:700;font-size:20px;
+  letter-spacing:-.02em;color:#141518;margin:20px 0 8px;text-align:center;">
   Frequently Asked Questions
 </div>
 <div style="font-family:'DM Sans',sans-serif;font-size:13px;color:#6B7280;
@@ -613,7 +611,7 @@ with _center:
 
     st.markdown("""
     <div class="control-card" style="text-align:center;">
-      <div style="font-family:'DM Sans',sans-serif;font-weight:700;font-size:15px;
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;
         color:#141518;margin-bottom:6px;">
         Still have questions?
       </div>
