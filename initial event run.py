@@ -13,6 +13,7 @@ from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
 import streamlit.components.v1 as components
+st.error("DEBUG BUILD MARKER — if you see this, the edited file is running")
 
 # =====================================================
 # PAGE CONFIG
@@ -767,6 +768,7 @@ components.html("""
 TICKETMASTER_API_KEY = st.secrets["TICKETMASTER_API_KEY"]
 SKIDDLE_API_KEY      = st.secrets["SKIDDLE_API_KEY"]
 NH_API_KEY           = st.secrets.get("NH_API_KEY", "")
+CINEMA_API_KEY       = st.secrets.get("CINEMA_API_KEY", "")
 SUPABASE_URL         = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY         = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 BIRD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/object/sign/Brand%20Logo/Bird%20Logo%20Left.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9jYTQwZTg5ZS00MTVkLTQ0NjEtYTZjZi00OTI2MDIwYmYyZTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJCcmFuZCBMb2dvL0JpcmQgTG9nbyBMZWZ0LnBuZyIsImlhdCI6MTc4MDU5ODM2NSwiZXhwIjoxODEyMTM0MzY1fQ.OMa5cbOtPSUZR4JTjlT3Mm1XBZlgi2rugZOQx7SLCX0"
@@ -794,6 +796,12 @@ FATSOMA_HEADERS = {
 ROADWORKS_TABLE       = "road_closures"
 ROADWORKS_DAYS_AHEAD  = 30   # planned closures: how far ahead to query
 ROADWORKS_HOURS_BACK  = 6    # unplanned closures: how far back to query
+ROADWORKS_RADIUS_MILES = 1   # roadworks are always scoped to this fixed radius,
+                              # independent of the user's selected event search radius
+
+FILM_CHASE_HOST  = "film-chase1.p.rapidapi.com"
+FILM_CHASE_BASE  = f"https://{FILM_CHASE_HOST}"
+SHOWS_DAYS_AHEAD = 14   # cinema showtimes: how far ahead to keep for the calendar's Shows box
 
 SKIDDLE_ONLY     = {"Genres", "Artists", "Distance", "Min Age", "Tickets URL", "source"}
 
@@ -1161,7 +1169,7 @@ with col3:
     search_db = st.button("Search", use_container_width=True)
 with col4:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    find_events = st.button("Fetch & Sync", use_container_width=True)
+    find_events = st.button("Refresh All", use_container_width=True)
 
 # ── Inject location button into the postcode text input via parent DOM ──
 components.html("""
@@ -1980,7 +1988,11 @@ def render_stat_category_modals(categories, titles=None):
 """, height=1, scrolling=False)
 
 
-def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_today, rw_week, radius_label):
+def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_today, rw_week,
+                      radius_label, rw_radius_label=ROADWORKS_RADIUS_MILES):
+    """Events use the user-selected search radius (`radius_label`); travel
+    disruptions always use the fixed `rw_radius_label` (see ROADWORKS_RADIUS_MILES)
+    regardless of what radius the user picked for events."""
     return f"""
 <div class="stat-row">
   <div class="stat-box stat-box-clickable" id="stat-box-so-new-today">
@@ -1997,15 +2009,15 @@ def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_toda
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-added-today">
     <div class="stat-num">{rw_added_today}</div>
-    <div class="stat-label">New Travel Disruptions Added Today within {radius_label} miles</div>
+    <div class="stat-label">New Travel Disruptions Added Today within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-today">
     <div class="stat-num">{rw_today}</div>
-    <div class="stat-label">Travel Disruptions Today within {radius_label} miles</div>
+    <div class="stat-label">Travel Disruptions Today within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-week">
     <div class="stat-num">{rw_week}</div>
-    <div class="stat-label">Travel Disruptions This Week within {radius_label} miles</div>
+    <div class="stat-label">Travel Disruptions This Week within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
 </div>"""
 
@@ -3476,7 +3488,7 @@ table {{ width:100%; min-width:640px; border-collapse:collapse; background:#fff;
     return total_pages, page
 
 
-def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None, sports_df=None):
+def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None, sports_df=None, shows_df=None):
     """Render a month-grid calendar view of events, grouped by their event_date.
     Days are clickable to show the full list of events; each event is clickable
     for more detail (venue, type, city, time, Impact Score/Rating, and a link if available).
@@ -3617,6 +3629,28 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
     for _fixtures in sports_by_day.values():
         _fixtures.sort(key=lambda e: e["time"])
 
+    # ── Cinema showtimes, bucketed by day ──
+    # Each showtime belongs to exactly one day, like sport fixtures.
+    shows_by_day = {}
+    if shows_df is not None and not shows_df.empty:
+        for _, sh in shows_df.iterrows():
+            d = _parse_date_safe(sh.get("Date"))
+            if d is None or d.year != year or d.month != month:
+                continue
+            entry = {
+                "film":         sh.get("Film") or "Unknown film",
+                "cinema":       sh.get("Cinema") or "",
+                "chain":        sh.get("Chain") or "",
+                "location":     sh.get("Location") or "",
+                "time":         sh.get("Time") or "",
+                "booking_link": sh.get("booking_link") or "",
+                "sold_out":     bool(sh.get("sold_out")),
+            }
+            shows_by_day.setdefault(d.day, []).append(entry)
+
+    for _showings in shows_by_day.values():
+        _showings.sort(key=lambda e: e["time"])
+
     weather_by_day = {}
     if lat is not None and lon is not None:
         forecast = fetch_weather_forecast(lat, lon)
@@ -3696,6 +3730,13 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             sport_onclick   = f' onclick="event.stopPropagation(); openDaySport({day})"' if n_sport and not is_past else ""
             sport_style     = ' style="cursor:pointer;"' if n_sport and not is_past else ""
 
+            day_shows    = shows_by_day.get(day, [])
+            n_shows      = len(day_shows)
+            shows_num_class = "cal-stat-num" if n_shows else "cal-stat-num cal-stat-empty"
+            shows_val       = str(n_shows) if n_shows else "–"
+            shows_onclick   = f' onclick="event.stopPropagation(); openDayShows({day})"' if not is_past else ""
+            shows_style     = ' style="cursor:pointer;"' if not is_past else ""
+
             wx = weather_by_day.get(day)
             wx_html = ""
             if wx and wx.get("tmax") is not None:
@@ -3704,25 +3745,29 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             di_pct = disposable_income_by_day.get(day)
             di_html = ""
             if di_pct is not None:
+                # The Supabase value can arrive as a number (42) or as a string
+                # that already includes a "%" (e.g. "42%") — strip any existing
+                # "%" before appending our own, so it's never shown twice.
+                di_pct_clean = str(di_pct).strip().rstrip("%")
                 di_class = "cal-daynum-di" if wx_html else "cal-daynum-di cal-daynum-di-standalone"
-                di_html = f'<span class="{di_class}" title="Payday for {di_pct}% of UK">{di_pct}%</span>'
+                di_html = f'<span class="{di_class}" title="Payday for {di_pct_clean}% of UK">{di_pct_clean}%</span>'
 
             stats_html = f"""<div class="cal-stat-grid">
                 <div class="cal-stat-box cal-stat-events"{events_onclick}{events_style}>
                     <div class="{events_num_class}">{events_val}</div>
                     <div class="cal-stat-label">Events</div>
                 </div>
-                <div class="cal-stat-box cal-stat-sport"{sport_onclick}{sport_style}>
-                    <div class="{sport_num_class}">{sport_val}</div>
-                    <div class="cal-stat-label">Sport</div>
+                <div class="cal-stat-box cal-stat-shows"{shows_onclick}{shows_style}>
+                    <div class="{shows_num_class}">{shows_val}</div>
+                    <div class="cal-stat-label">Shows</div>
                 </div>
                 <div class="cal-stat-box cal-stat-roadworks"{rw_onclick}{rw_style}>
                     <div class="{rw_num_class}">{rw_val}</div>
                     <div class="cal-stat-label">Travel</div>
                 </div>
-                <div class="cal-stat-box cal-stat-other">
-                    <div class="cal-stat-num cal-stat-empty">–</div>
-                    <div class="cal-stat-label">Other</div>
+                <div class="cal-stat-box cal-stat-sport"{sport_onclick}{sport_style}>
+                    <div class="{sport_num_class}">{sport_val}</div>
+                    <div class="cal-stat-label">Sports</div>
                 </div>
             </div>"""
 
@@ -3743,6 +3788,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
     events_json       = json.dumps(events_by_day).replace("</", "<\\/")
     roadworks_json    = json.dumps(roadworks_by_day).replace("</", "<\\/")
     sports_json        = json.dumps(sports_by_day).replace("</", "<\\/")
+    shows_json         = json.dumps(shows_by_day).replace("</", "<\\/")
     events_count_json = json.dumps(events_count_by_day).replace("</", "<\\/")
     is_past_json      = json.dumps(is_past_by_day).replace("</", "<\\/")
     weather_hourly_json = json.dumps(weather_hourly_by_day).replace("</", "<\\/")
@@ -3792,6 +3838,9 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .cal-stat-roadworks .cal-stat-num:not(.cal-stat-empty) {{ color:#00457c; }}
 .cal-stat-sport[style*="cursor:pointer"] {{ background:rgba(23,153,72,.10); transition:background .15s; }}
 .cal-stat-sport[style*="cursor:pointer"]:hover {{ background:rgba(23,153,72,.18); }}
+.cal-stat-shows .cal-stat-num:not(.cal-stat-empty) {{ color:#7c3aed; }}
+.cal-stat-shows[style*="cursor:pointer"] {{ background:rgba(124,58,237,.10); transition:background .15s; }}
+.cal-stat-shows[style*="cursor:pointer"]:hover {{ background:rgba(124,58,237,.18); }}
 .cal-daynum-wx {{ font-family:'DM Mono',monospace; font-weight:500; font-size:10px; color:#0284c7;
                    margin-left:auto; white-space:nowrap; }}
 .cal-daynum-di {{ font-family:'DM Mono',monospace; font-weight:600; font-size:9px; color:#179948;
@@ -3871,6 +3920,7 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 const EVENTS_BY_DAY       = {events_json};
 const ROADWORKS_BY_DAY    = {roadworks_json};
 const SPORTS_BY_DAY       = {sports_json};
+const SHOWS_BY_DAY        = {shows_json};
 const EVENTS_COUNT_BY_DAY = {events_count_json};
 const IS_PAST_BY_DAY      = {is_past_json};
 const WEATHER_HOURLY_BY_DAY = {weather_hourly_json};
@@ -3927,6 +3977,14 @@ function openDaySport(day) {{
   currentDay  = day;
   document.getElementById('modal-title').innerText = 'Sport — ' + day + ' ' + MONTH_LABEL;
   renderSportList(day);
+  document.getElementById('modal-overlay').classList.add('open');
+}}
+
+function openDayShows(day) {{
+  currentMode = 'shows';
+  currentDay  = day;
+  document.getElementById('modal-title').innerText = 'Shows — ' + day + ' ' + MONTH_LABEL;
+  renderShowsList(day);
   document.getElementById('modal-overlay').classList.add('open');
 }}
 
@@ -4041,8 +4099,9 @@ function openDaySummary(day) {{
     hint = 'Click Events above for the full list.';
   }}
   let weatherHtml = '';
-  const diPct = DISPOSABLE_INCOME_BY_DAY[day];
-  const diBadge = (diPct !== undefined && diPct !== null)
+  const diPctRaw = DISPOSABLE_INCOME_BY_DAY[day];
+  const diPct = (diPctRaw !== undefined && diPctRaw !== null) ? String(diPctRaw).trim().replace(/%+$/, '') : null;
+  const diBadge = diPct
     ? '<span title="Payday for ' + diPct + '% of UK" style="margin-left:8px; font-family:\\'DM Mono\\',monospace; font-size:9px; font-weight:600; color:#179948; background:rgba(23,153,72,.12); padding:2px 8px; border-radius:999px; text-transform:none; letter-spacing:0;">Payday ' + diPct + '%</span>'
     : '';
   if (hourly.length || diBadge) {{
@@ -4154,6 +4213,23 @@ function renderSportList(day) {{
   document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No home fixtures for this local team on this day.</div>';
 }}
 
+function renderShowsList(day) {{
+  const items = SHOWS_BY_DAY[day] || [];
+  let html = '';
+  items.forEach(function(s) {{
+    const sub = [s.time, s.cinema, s.location].filter(Boolean).join(' · ');
+    const clickAttr = s.booking_link ? ' onclick="window.open(\\'' + s.booking_link.replace(/'/g, "\\\\'") + '\\', \\'_blank\\')" style="cursor:pointer;"' : '';
+    html += '<div class="day-event-row"' + clickAttr + '>' +
+              '<div class="day-event-top">' +
+                '<div class="day-event-name">' + esc(s.film) + '</div>' +
+                (s.sold_out ? '<span class="rating-badge" style="background:rgba(220,38,38,.10);color:#991b1b;">Sold out</span>' : '') +
+              '</div>' +
+              (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
+            '</div>';
+  }});
+  document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No current listings.</div>';
+}}
+
 function showDetail(day, idx) {{
   const e = (EVENTS_BY_DAY[day] || [])[idx];
   if (!e) return;
@@ -4250,6 +4326,19 @@ function backToDay() {{
 # FETCH FUNCTIONS
 # =====================================================
 
+def _format_price_range(min_price, max_price, currency=""):
+    """Turn Ticketmaster-style min/max price numbers into a display string,
+    e.g. (25.0, 25.0, 'GBP') -> '£25.00', (10.0, 40.0, 'GBP') -> '£10.00 - £40.00'.
+    Returns None if there's nothing to show."""
+    if min_price is None and max_price is None:
+        return None
+    symbol = {"GBP": "£", "USD": "$", "EUR": "€"}.get(currency, f"{currency} " if currency else "")
+    if min_price is not None and max_price is not None and min_price != max_price:
+        return f"{symbol}{min_price:.2f} - {symbol}{max_price:.2f}"
+    val = min_price if min_price is not None else max_price
+    return f"{symbol}{val:.2f}"
+
+
 def fetch_ticketmaster(lat, lon, radius, status, progress):
     """Fetch all TM events for lat/lon/radius and return event dict."""
     start_dt      = datetime.now(timezone.utc)
@@ -4287,6 +4376,7 @@ def fetch_ticketmaster(lat, lon, radius, status, progress):
                 raise RuntimeError(f"Ticketmaster API error {res.status_code}")
 
             data        = res.json()
+            data        = res.json()
             total_pages = min(data.get("page", {}).get("totalPages", 1), TM_MAX_PAGES)
 
             for e in data.get("_embedded", {}).get("events", []):
@@ -4295,6 +4385,11 @@ def fetch_ticketmaster(lat, lon, radius, status, progress):
                     continue
                 v        = venues[0]
                 event_id = str(e.get("id")).strip()
+                price_ranges = e.get("priceRanges") or []
+                price = None
+                if price_ranges:
+                    pr    = price_ranges[0]
+                    price = _format_price_range(pr.get("min"), pr.get("max"), pr.get("currency", ""))
                 raw      = (
                     str(e.get("name")) +
                     str(e.get("dates", {}).get("start", {}).get("localDate")) +
@@ -4311,15 +4406,15 @@ def fetch_ticketmaster(lat, lon, radius, status, progress):
                     "PostalCode":   v.get("postalCode"),
                     "Latitude":     v.get("location", {}).get("latitude"),
                     "Longitude":    v.get("location", {}).get("longitude"),
+                    "Price":        price,
                     "url":          e.get("url"),
                     "event_hash":   hashlib.md5(raw.encode()).hexdigest(),
                     "last_seen_at": datetime.now(timezone.utc).isoformat(),
                 }
-
             page += 1
             time.sleep(0.2)
 
-        progress.progress(min(window / (total_windows * 2), 0.5))
+        progress.progress(min(window / total_windows, 1.0) * 0.25)
         start_dt = end_dt
 
     return events
@@ -4393,8 +4488,8 @@ def fetch_skiddle(lat, lon, radius, status, progress):
                     "Artists":     artist_names or None,
                     "Distance":    e.get("distance"),
                     "Min Age":     e.get("minage"),
-                    "Tickets URL": e.get("tickets") or e.get("link"),
-                    "source":      "skiddle",
+                    "Price":       e.get("entryprice"),
+                    "Tickets URL": e.get("tickets") or e.get("link"),                    "source":      "skiddle",
                     "event_hash":  hashlib.md5(raw.encode()).hexdigest(),
                     "last_seen_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -4404,7 +4499,7 @@ def fetch_skiddle(lat, lon, radius, status, progress):
             offset += SK_PAGE_SIZE
             time.sleep(0.2)
 
-        progress.progress(0.5 + min(window / (total_windows * 2), 0.5))
+        progress.progress(0.25 + min(window / total_windows, 1.0) * 0.25)
         start_dt = end_dt
 
     return events
@@ -4462,19 +4557,39 @@ def _fatsoma_get_page(start_dt, end_dt, page):
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def _fetch_fatsoma_events_cached(months_ahead):
+def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
     """Nationwide sweep of all active Fatsoma events for the next
     `months_ahead` months. Returns a list of dicts already shaped to match
     the BurdySteupTest schema (same keys/casing as fetch_ticketmaster /
     fetch_skiddle), minus radius filtering — that happens in fetch_fatsoma()
-    below, per search, on this cached list."""
+    below, per search, on this cached list.
+
+    `_status`/`_progress` (leading underscore so Streamlit's cache_data
+    doesn't try to hash them) are the same status/progress objects
+    fetch_ticketmaster uses, so a cache MISS shows the same live
+    "Searching Fatsoma (Mon YYYY — page N)" feedback in the loading overlay,
+    updated on every page request within every month window.
+    On a cache HIT this function body never runs, so no update fires —
+    that's fine, the outer fetch_fatsoma() call already sets a message
+    before calling in either case."""
     start_date = datetime.now(timezone.utc)
     end_date = _add_months(start_date, months_ahead)
 
+    month_windows  = list(_fatsoma_month_ranges(start_date, end_date))
+    total_windows  = max(1, len(month_windows))
+
     all_events = {}
-    for start_dt, end_dt in _fatsoma_month_ranges(start_date, end_date):
+    for window_idx, (start_dt, end_dt) in enumerate(month_windows, start=1):
+        if _progress is not None:
+            # Fatsoma's slice of the overall bar runs 0.5 -> 0.75 (TM/Skiddle
+            # already cover 0 -> 0.5, roadworks covers 0.75 -> 1.0), mirroring
+            # the fixed 0.75 checkpoint fetch_fatsoma() used to jump straight to.
+            _progress.progress(0.5 + 0.25 * (window_idx / total_windows))
         page = 1
         while True:
+            if _status is not None:
+                _status.text(f"Searching Fatsoma "
+                             f"({start_dt.strftime('%b %Y')} — page {page})")
             data = _fatsoma_get_page(start_dt, end_dt, page)
             if data is None:
                 break
@@ -4546,7 +4661,7 @@ def fetch_fatsoma(lat, lon, radius, status, progress):
     Returns an event dict shaped like fetch_ticketmaster/fetch_skiddle's,
     ready for upsert_batch()."""
     status.text("Searching Fatsoma...")
-    all_events = _fetch_fatsoma_events_cached(MONTHS_AHEAD)
+    all_events = _fetch_fatsoma_events_cached(MONTHS_AHEAD, _status=status, _progress=progress)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     events = {}
@@ -4790,9 +4905,15 @@ def _fetch_nh_closures_cached(subscription_key, closure_type, start, end):
 
 
 def fetch_roadworks(lat, lon, radius, status, progress):
-    """Fetch National Highways closures (planned + unplanned) near lat/lon
-    within `radius` miles. Mirrors the fetch_ticketmaster / fetch_skiddle
-    pattern: returns a list of summary dicts ready for storage."""
+    """Fetch National Highways closures (planned + unplanned) near lat/lon.
+    Mirrors the fetch_ticketmaster / fetch_skiddle pattern: returns a list of
+    summary dicts ready for storage.
+
+    NOTE: the `radius` parameter (the user's selected event search radius) is
+    intentionally ignored here — roadworks are always scoped to the fixed
+    ROADWORKS_RADIUS_MILES, regardless of what radius the user picked for
+    events. The parameter is kept so this still lines up with the
+    fetch_ticketmaster/fetch_skiddle/fetch_fatsoma call signature."""
     if not NH_API_KEY:
         status.text("⚠ Roadworks skipped — add NH_API_KEY to secrets")
         return []
@@ -4811,7 +4932,7 @@ def fetch_roadworks(lat, lon, radius, status, progress):
         end   = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
         try:
             for record in _fetch_nh_closures_cached(NH_API_KEY, ctype, start, end):
-                summary = summarize_roadworks_record(record, lat, lon, radius, ctype)
+                summary = summarize_roadworks_record(record, lat, lon, ROADWORKS_RADIUS_MILES, ctype)
                 # The unplanned/planned windows can both match an ongoing closure
                 # (or the API's own paging can resurface a record) — keep only the
                 # first sighting of a given record_id so we never send duplicate
@@ -4821,9 +4942,167 @@ def fetch_roadworks(lat, lon, radius, status, progress):
                     results.append(summary)
         except RuntimeError as e:
             st.warning(f"National Highways API ({ctype}): {e}")
-        progress.progress(min(1.0, 0.5 + (i + 1) * 0.25))
+        progress.progress(min(1.0, 0.75 + (i + 1) * 0.25 / len(windows)))
 
     return results
+
+
+def _film_chase_headers():
+    return {"x-rapidapi-host": FILM_CHASE_HOST, "x-rapidapi-key": CINEMA_API_KEY}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_film_chase_cinemas_cached():
+    """All Film Chase cinemas, paginated. Cached for an hour — the physical
+    list of UK cinemas barely changes, so there's no need to refetch it on
+    every single search.
+
+    NOTE: assumes /cinemas returns a bare JSON array of cinema objects (as
+    seen from a sample record: id, chain, name, address, latitude,
+    longitude, link, google_place_id). If the live response instead wraps
+    the list in an envelope (e.g. {"data": [...]}), adjust the `batch =`
+    line below accordingly — easiest way to check is to temporarily
+    st.write(resp.json()) right after the first request."""
+    headers = _film_chase_headers()
+    cinemas, page = [], 1
+    while True:
+        resp = requests.get(
+            f"{FILM_CHASE_BASE}/cinemas",
+            headers=headers, params={"page": page, "items": 100}, timeout=15,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        batch = payload.get("data", payload) if isinstance(payload, dict) else payload
+        if not batch:
+            break
+        cinemas.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return cinemas
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_film_chase_films_cached():
+    """film_id -> title lookup, built from Film Chase's /films list. Cached
+    for an hour alongside the cinema list, for the same reason."""
+    headers = _film_chase_headers()
+    titles, page = {}, 1
+    while True:
+        resp = requests.get(
+            f"{FILM_CHASE_BASE}/films",
+            headers=headers,
+            params={"page": page, "items": 100, "include_outdated": "false"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        batch = payload.get("data", payload) if isinstance(payload, dict) else payload
+        if not batch:
+            break
+        for f in batch:
+            titles[f.get("id")] = f.get("title", "Unknown film")
+        if len(batch) < 100:
+            break
+        page += 1
+    return titles
+
+
+def _nearby_cinemas(lat, lon, radius):
+    """Cinemas (from the cached full list) within `radius` miles of
+    (lat, lon), same haversine approach as get_roadworks_within_radius —
+    the cinema list is small enough that no bounding-box pre-filter is
+    needed, it's just filtered in memory."""
+    cinemas = _fetch_film_chase_cinemas_cached()
+    nearby = []
+    for c in cinemas:
+        clat, clon = c.get("latitude"), c.get("longitude")
+        if clat is None or clon is None:
+            continue
+        dist = haversine_miles(lat, lon, clat, clon)
+        if dist <= radius:
+            c = dict(c)
+            c["distance_miles"] = round(dist, 2)
+            nearby.append(c)
+    return nearby
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_shows_within_radius(lat, lon, radius):
+    """Cinema showtimes (film, cinema, date, start time) from the Film Chase
+    API within `radius` miles of (lat, lon), for the next SHOWS_DAYS_AHEAD
+    days. Cached 15 minutes, keyed on (lat, lon, radius) — same call is used
+    for both the Fetch & Sync pipeline and a plain Search, mirroring
+    get_sports_within_radius, so re-searching the same postcode doesn't
+    keep re-hitting RapidAPI.
+
+    Unlike roadworks, there's no separate Supabase table backing this —
+    showtimes are fetched live (through the cache above) rather than
+    stored and read back."""
+    if not CINEMA_API_KEY:
+        return pd.DataFrame()
+
+    try:
+        nearby = _nearby_cinemas(lat, lon, radius)
+    except requests.RequestException as e:
+        st.warning(f"Film Chase API (cinemas): {e}")
+        return pd.DataFrame()
+
+    if not nearby:
+        return pd.DataFrame()
+
+    try:
+        film_titles = _fetch_film_chase_films_cached()
+    except requests.RequestException as e:
+        st.warning(f"Film Chase API (films): {e}")
+        film_titles = {}
+
+    headers = _film_chase_headers()
+    now     = datetime.now(timezone.utc)
+    cutoff  = now + timedelta(days=SHOWS_DAYS_AHEAD)
+
+    rows = []
+    for cinema in nearby:
+        cid = cinema.get("id")
+        try:
+            resp = requests.get(f"{FILM_CHASE_BASE}/showtimes/{cid}", headers=headers, timeout=15)
+            resp.raise_for_status()
+            payload = resp.json()
+            showtimes = payload.get("data", payload) if isinstance(payload, dict) else payload
+        except requests.RequestException as e:
+            st.warning(f"Film Chase API (showtimes for cinema {cid}): {e}")
+            continue
+
+        for s in (showtimes or []):
+            raw = s.get("showing_at")
+            if not raw:
+                continue
+            try:
+                showing_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if showing_at < now or showing_at > cutoff:
+                continue
+
+            rows.append({
+                "showtime_id":    s.get("id"),
+                "film_id":        s.get("film_id"),
+                "Film":           film_titles.get(s.get("film_id"), "Unknown film"),
+                "cinema_id":      cid,
+                "Cinema":         cinema.get("name"),
+                "Chain":          cinema.get("chain"),
+                "Location":       cinema.get("address"),
+                "Date":           showing_at.strftime("%Y-%m-%d"),
+                "Time":           showing_at.strftime("%H:%M"),
+                "booking_link":   s.get("booking_link"),
+                "sold_out":       s.get("sold_out", False),
+                "distance_miles": cinema.get("distance_miles"),
+            })
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values(["Date", "Time"])
+    return df
 
 
 def table_fetch_bbox(table_name: str, lat_col: str, lon_col: str,
@@ -4917,14 +5196,19 @@ def get_new_events_within_radius(lat, lon, radius, start_date, end_date):
     return nearby
 
 
-def get_roadworks_within_radius(lat, lon, radius):
+def get_roadworks_within_radius(lat, lon, radius=None):
     """Read closures from Supabase within a bounding box around (lat, lon),
-    then filter to the precise `radius` miles client-side. Previously this
-    pulled the ENTIRE roadworks table on every search before filtering —
-    fine when the table was small, but it only grows over time (every past
-    search adds more rows), so it got slower and slower. The bounding-box
-    pre-filter keeps the amount of data pulled roughly constant regardless
-    of how large the table gets."""
+    then filter to the precise radius client-side. Previously this pulled the
+    ENTIRE roadworks table on every search before filtering — fine when the
+    table was small, but it only grows over time (every past search adds more
+    rows), so it got slower and slower. The bounding-box pre-filter keeps the
+    amount of data pulled roughly constant regardless of how large the table
+    gets.
+
+    NOTE: `radius` (the user's selected event search radius) is accepted for
+    call-site compatibility but ignored — roadworks are always scoped to the
+    fixed ROADWORKS_RADIUS_MILES, independent of the event search radius."""
+    radius = ROADWORKS_RADIUS_MILES
     try:
         lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
         rows = table_fetch_bbox(
@@ -5118,6 +5402,7 @@ if find_events:
         # ── TICKETMASTER ──
         try:
             tm_events = fetch_ticketmaster(lat, lon, radius, status, progress)
+            st.write("Sample TM event:", next(iter(tm_events.values()), None))   # TEMP DEBUG
             tm_count, tm_new = upsert_batch(tm_events)
             new_events_count += tm_new
             status.text(f"✓ Ticketmaster: {tm_count} events processed")
@@ -5131,6 +5416,7 @@ if find_events:
         # ── SKIDDLE ──
         try:
             sk_events = fetch_skiddle(lat, lon, radius, status, progress)
+            st.write("Sample Skiddle event:", next(iter(sk_events.values()), None))   # TEMP DEBUG
             sk_count, sk_new = upsert_batch(sk_events, strip_keys=SKIDDLE_ONLY)
             new_events_count += sk_new
             status.text(f"✓ Skiddle: {sk_count} events processed")
@@ -5141,12 +5427,12 @@ if find_events:
         # ── FATSOMA ──
         try:
             fs_events = fetch_fatsoma(lat, lon, radius, status, progress)
+            st.write("Sample Fatsoma event:", next(iter(fs_events.values()), None))   # TEMP DEBUG
             fs_count, fs_new = upsert_batch(fs_events)
             new_events_count += fs_new
             status.text(f"✓ Fatsoma: {fs_count} events processed")
         except RuntimeError as e:
             st.error(str(e))
-            fs_count = 0
 
         # ── ROADWORKS (National Highways) ──
         rw_count = 0
@@ -5190,6 +5476,9 @@ if find_events:
 
         # Home fixtures for the local team(s), for the calendar's Sport box
         st.session_state["sports_df"] = get_sports_within_radius(lat, lon, radius)
+
+        # Cinema showtimes near the searched postcode, for the calendar's Shows box
+        st.session_state["shows_df"] = get_shows_within_radius(lat, lon, radius)
 
         # All-time (incl. historical) events within radius, for accurate
         # past-day counts in the calendar — the live search below only
@@ -5298,9 +5587,9 @@ if find_events:
                 "so-new-today":      f"New Events Added Today within {radius} miles",
                 "so-today":          f"Events Today within {radius} miles",
                 "so-week":           f"Events This Week within {radius} miles",
-                "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
-                "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
-                "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+                "so-rw-added-today": f"New Travel Disruptions Added Today within {ROADWORKS_RADIUS_MILES} mile",
+                "so-rw-today":       f"Travel Disruptions Today within {ROADWORKS_RADIUS_MILES} mile",
+                "so-rw-week":        f"Travel Disruptions This Week within {ROADWORKS_RADIUS_MILES} mile",
             },
         )
 
@@ -5360,6 +5649,9 @@ if search_db:
             # Home fixtures for the local team(s), for the calendar's Sport box
             st.session_state["sports_df"] = get_sports_within_radius(lat, lon, radius)
 
+            # Cinema showtimes near the searched postcode, for the calendar's Shows box
+            st.session_state["shows_df"] = get_shows_within_radius(lat, lon, radius)
+
             # All-time (incl. historical) events within radius, for accurate
             # past-day counts in the calendar — the live search above only
             # returns current/future events by design.
@@ -5412,9 +5704,9 @@ if search_db:
                     "so-new-today":      f"New Events Added Today within {radius} miles",
                     "so-today":          f"Events Today within {radius} miles",
                     "so-week":           f"Events This Week within {radius} miles",
-                    "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
-                    "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
-                    "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+                    "so-rw-added-today": f"New Travel Disruptions Added Today within {ROADWORKS_RADIUS_MILES} mile",
+                    "so-rw-today":       f"Travel Disruptions Today within {ROADWORKS_RADIUS_MILES} mile",
+                    "so-rw-week":        f"Travel Disruptions This Week within {ROADWORKS_RADIUS_MILES} mile",
                 },
             )
 
@@ -5727,6 +6019,7 @@ if not df.empty:
             lon=st.session_state.get("_search_lon"),
             all_events_df=st.session_state.get("all_events_df", pd.DataFrame()),
             sports_df=st.session_state.get("sports_df", pd.DataFrame()),
+            shows_df=st.session_state.get("shows_df", pd.DataFrame()),
         )
 
 # Hide the loading overlay only now — after whichever pipeline ran (Fetch &

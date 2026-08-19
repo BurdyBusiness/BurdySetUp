@@ -774,6 +774,7 @@ WORD_LOGO_URL        = "https://ujrublkoqtpijwijklvq.supabase.co/storage/v1/obje
 
 TM_BASE_URL      = "https://app.ticketmaster.com/discovery/v2/events.json"
 SKIDDLE_URL      = "https://www.skiddle.com/api/v1/events/search/"
+FATSOMA_BASE_URL = "https://api.fatsoma.com/v1/events"
 POSTCODE_API     = "https://api.postcodes.io/postcodes/{}"
 NH_BASE_URL      = "https://api.data.nationalhighways.co.uk/roads/v2.0/closures"
 
@@ -783,10 +784,18 @@ TM_MAX_PAGES     = 5
 TM_PAGE_SIZE     = 200
 SK_MAX_PAGES     = 10
 SK_PAGE_SIZE     = 100
+FATSOMA_PAGE_SIZE = 52
+
+FATSOMA_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/vnd.api+json, application/json",
+}
 
 ROADWORKS_TABLE       = "road_closures"
 ROADWORKS_DAYS_AHEAD  = 30   # planned closures: how far ahead to query
 ROADWORKS_HOURS_BACK  = 6    # unplanned closures: how far back to query
+ROADWORKS_RADIUS_MILES = 1   # roadworks are always scoped to this fixed radius,
+                              # independent of the user's selected event search radius
 
 SKIDDLE_ONLY     = {"Genres", "Artists", "Distance", "Min Age", "Tickets URL", "source"}
 
@@ -1099,15 +1108,15 @@ _hero_html = """
     <div class="pill">&#9670; &nbsp;Event Intelligence Platform</div>
     <div class="headline">Discover Every Event.<br>Anywhere in the UK.</div>
     <div class="body-text">
-      Burdy Event Intelligence aggregates live data from <strong>Ticketmaster</strong> and
-      <strong>Skiddle</strong> — two of the UK's largest ticketing platforms — and syncs it
-      directly into your Supabase database in real time. Search by postcode, define your radius,
-      and surface every upcoming event within your target area across the next 24 months.
-      No manual exports. No stale data. Just clean, structured event intelligence at your fingertips.
+      Burdy Event Intelligence aggregates live data from multiple leading UK ticket sellers
+      — and syncs it directly into your Supabase database in real time. Search by postcode,
+      define your radius, and surface every upcoming event within your target area across
+      the next 24 months. No manual exports. No stale data. Just clean, structured event
+      intelligence at your fingertips.
     </div>
     <div class="stats">
       <div style="text-align:center;">
-        <div class="stat-val">2 Sources</div>
+        <div class="stat-val">5 Sources</div>
         <div class="stat-lbl">Live API feeds</div>
       </div>
       <div class="divider"></div>
@@ -1973,7 +1982,11 @@ def render_stat_category_modals(categories, titles=None):
 """, height=1, scrolling=False)
 
 
-def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_today, rw_week, radius_label):
+def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_today, rw_week,
+                      radius_label, rw_radius_label=ROADWORKS_RADIUS_MILES):
+    """Events use the user-selected search radius (`radius_label`); travel
+    disruptions always use the fixed `rw_radius_label` (see ROADWORKS_RADIUS_MILES)
+    regardless of what radius the user picked for events."""
     return f"""
 <div class="stat-row">
   <div class="stat-box stat-box-clickable" id="stat-box-so-new-today">
@@ -1990,15 +2003,15 @@ def _stat_row_search(new_today, today_count, week_count, rw_added_today, rw_toda
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-added-today">
     <div class="stat-num">{rw_added_today}</div>
-    <div class="stat-label">New Travel Disruptions Added Today within {radius_label} miles</div>
+    <div class="stat-label">New Travel Disruptions Added Today within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-today">
     <div class="stat-num">{rw_today}</div>
-    <div class="stat-label">Travel Disruptions Today within {radius_label} miles</div>
+    <div class="stat-label">Travel Disruptions Today within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
   <div class="stat-box stat-box-clickable" id="stat-box-so-rw-week">
     <div class="stat-num">{rw_week}</div>
-    <div class="stat-label">Travel Disruptions This Week within {radius_label} miles</div>
+    <div class="stat-label">Travel Disruptions This Week within {rw_radius_label} mile{'s' if rw_radius_label != 1 else ''}</div>
   </div>
 </div>"""
 
@@ -2525,7 +2538,7 @@ _overlay_percent_slot = None  # separate, reused placeholder for percent updates
 _overlay_message_slot = None  # separate, reused placeholder for message updates only
 
 
-def show_loading_overlay(message="Talking to Ticketmaster, Skiddle and National Highways…"):
+def show_loading_overlay(message="Talking to Ticketmaster, Skiddle, Fatsoma and National Highways…"):
     """Inject a full-page loading overlay (card + spinner) into the parent
     document, sitting on top of the whole page, until hide_loading_overlay()
     removes it. Same DOM-injection approach as burdy_error. Renders into a
@@ -2899,6 +2912,41 @@ def fetch_weather_forecast(lat, lon):
         return {}
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_disposable_income_cached():
+    """Whole disposable_income table, keyed by 'income date' (as a string,
+    whatever format Postgres returns it in — matched via _parse_date_safe
+    the same way every other date-keyed dict in this file is). Cached for
+    an hour since this is a slow-moving daily economic figure, not
+    something that changes minute to minute — no lat/lon dependency since
+    it's one nationwide row per day, not regional. Raises on failure
+    rather than swallowing the error, so a transient failure never gets
+    cached as "no data" for the full TTL — st.cache_data only stores a
+    value that was successfully returned, not one that was raised."""
+    rows = (
+        supabase.table("disposable_income")
+        .select('"income date","Disposable Income"')
+        .execute()
+        .data or []
+    )
+    return {
+        r["income date"]: r["Disposable Income"]
+        for r in rows
+        if r.get("income date") is not None and r.get("Disposable Income") is not None
+    }
+
+
+def fetch_disposable_income():
+    """Failures handled here, outside the cache, same reasoning as
+    fetch_weather_forecast — a transient error shouldn't get cached as
+    "no data" for the full TTL."""
+    try:
+        return _fetch_disposable_income_cached()
+    except Exception as e:
+        st.caption(f"⚠ Disposable income data unavailable right now ({e})")
+        return {}
+
+
 def upsert_batch(events_dict, strip_keys=None):
     """Upsert a dict of events, preserving first_seen_at / Created At on existing rows.
     Returns (total_processed, new_count) — new_count lets callers report how many
@@ -2961,6 +3009,7 @@ _TYPE_MAP = {
     "concert":     1,
     "comedy":      2,
     "sport":       3,
+    "football":    3,
     "clubbing":    1,
     "theatre":     2,
     "exhibition":  5,
@@ -3433,7 +3482,7 @@ table {{ width:100%; min-width:640px; border-collapse:collapse; background:#fff;
     return total_pages, page
 
 
-def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None):
+def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None, sports_df=None):
     """Render a month-grid calendar view of events, grouped by their event_date.
     Days are clickable to show the full list of events; each event is clickable
     for more detail (venue, type, city, time, Impact Score/Rating, and a link if available).
@@ -3441,11 +3490,14 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
     "Roadworks" stat box in each day cell. lat/lon (optional) enable the
     "Weather" stat box via Open-Meteo — days outside the forecast's ~16-day
     window (past days, or far-future months) just show no data, same as the
-    Holidays/Other placeholders. all_events_df (optional) is a separate,
+    Other placeholder. all_events_df (optional) is a separate,
     all-time (incl. historical) fetch used ONLY to get accurate Events counts
     for days that have already passed — df itself only ever contains
     current/future events (search_within_radius filters out anything before
-    "now" server-side), so past days would otherwise always show 0."""
+    "now" server-side), so past days would otherwise always show 0. sports_df
+    (optional) is fixtures from the team_sports table already filtered to the
+    search radius on the HOME team's ground only (see get_sports_within_radius),
+    bucketed by day and linked to the "Sport" stat box."""
     df = add_impact_scores(df)
 
     col_lower  = {c.lower(): c for c in df.columns}
@@ -3537,6 +3589,40 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
                 roadworks_by_day.setdefault(day_cursor.day, []).append(entry)
                 day_cursor += timedelta(days=1)
 
+    # ── Sport fixtures, bucketed by day ──
+    # Unlike roadworks (which can span several days), a fixture belongs to
+    # exactly one day — its own Date column.
+    sports_by_day = {}
+    if sports_df is not None and not sports_df.empty:
+        _sp_col_lower = {c.lower(): c for c in sports_df.columns}
+        _sp_date_col  = _sp_col_lower.get("date")
+        _sp_time_col  = _sp_col_lower.get("time")
+        _sp_home_col  = _sp_col_lower.get("home team")
+        _sp_away_col  = _sp_col_lower.get("away team")
+        _sp_venue_col = _sp_col_lower.get("venue name")
+        _sp_city_col  = _sp_col_lower.get("city")
+        _sp_comp_col  = _sp_col_lower.get("competition")
+        if _sp_date_col:
+            for _, sp in sports_df.iterrows():
+                d = _parse_date_safe(sp.get(_sp_date_col))
+                if d is None or d.year != year or d.month != month:
+                    continue
+                home = str(sp.get(_sp_home_col) or "").strip() if _sp_home_col else ""
+                away = str(sp.get(_sp_away_col) or "").strip() if _sp_away_col else ""
+                entry = {
+                    "home":        home,
+                    "away":        away,
+                    "name":        (f"{home} vs {away}" if home and away else "Fixture"),
+                    "time":        str(sp.get(_sp_time_col) or "") if _sp_time_col else "",
+                    "venue":       str(sp.get(_sp_venue_col) or "") if _sp_venue_col else "",
+                    "city":        str(sp.get(_sp_city_col) or "") if _sp_city_col else "",
+                    "competition": str(sp.get(_sp_comp_col) or "") if _sp_comp_col else "",
+                }
+                sports_by_day.setdefault(d.day, []).append(entry)
+
+    for _fixtures in sports_by_day.values():
+        _fixtures.sort(key=lambda e: e["time"])
+
     weather_by_day = {}
     if lat is not None and lon is not None:
         forecast = fetch_weather_forecast(lat, lon)
@@ -3554,6 +3640,15 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
         for day, info in weather_by_day.items()
         if info.get("hourly")
     }
+
+    # Disposable income % — one nationwide row per day, independent of
+    # lat/lon, so this doesn't need the "if lat is not None" guard weather
+    # does.
+    disposable_income_by_day = {}
+    for date_str, pct in fetch_disposable_income().items():
+        d = _parse_date_safe(date_str)
+        if d is not None and d.year == year and d.month == month:
+            disposable_income_by_day[d.day] = pct
 
     cal_obj = calendar.Calendar(firstweekday=0)  # Monday start
     weeks   = cal_obj.monthdayscalendar(year, month)
@@ -3600,19 +3695,32 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             rw_onclick   = f' onclick="event.stopPropagation(); openDayRoadworks({day})"' if n_rw and not is_past else ""
             rw_style     = ' style="cursor:pointer;"' if n_rw and not is_past else ""
 
+            day_sport    = sports_by_day.get(day, [])
+            n_sport      = len(day_sport)
+            sport_num_class = "cal-stat-num" if n_sport else "cal-stat-num cal-stat-empty"
+            sport_val       = str(n_sport) if n_sport else "–"
+            sport_onclick   = f' onclick="event.stopPropagation(); openDaySport({day})"' if n_sport and not is_past else ""
+            sport_style     = ' style="cursor:pointer;"' if n_sport and not is_past else ""
+
             wx = weather_by_day.get(day)
             wx_html = ""
             if wx and wx.get("tmax") is not None:
-                wx_html = f'<span class="cal-daynum-wx">{wx["icon"]} {wx["tmax"]}°</span>'
+                wx_html = f'<span class="cal-daynum-wx" title="Max temp {wx["tmax"]}°">{wx["icon"]} {wx["tmax"]}°</span>'
+
+            di_pct = disposable_income_by_day.get(day)
+            di_html = ""
+            if di_pct is not None:
+                di_class = "cal-daynum-di" if wx_html else "cal-daynum-di cal-daynum-di-standalone"
+                di_html = f'<span class="{di_class}" title="Payday for {di_pct}% of UK">{di_pct}%</span>'
 
             stats_html = f"""<div class="cal-stat-grid">
                 <div class="cal-stat-box cal-stat-events"{events_onclick}{events_style}>
                     <div class="{events_num_class}">{events_val}</div>
                     <div class="cal-stat-label">Events</div>
                 </div>
-                <div class="cal-stat-box cal-stat-holidays">
-                    <div class="cal-stat-num cal-stat-empty">–</div>
-                    <div class="cal-stat-label">Holidays</div>
+                <div class="cal-stat-box cal-stat-sport"{sport_onclick}{sport_style}>
+                    <div class="{sport_num_class}">{sport_val}</div>
+                    <div class="cal-stat-label">Sport</div>
                 </div>
                 <div class="cal-stat-box cal-stat-roadworks"{rw_onclick}{rw_style}>
                     <div class="{rw_num_class}">{rw_val}</div>
@@ -3631,7 +3739,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             # specifically.
             cell_class = "cal-cell" + (" cal-today" if is_today else "") + " cal-clickable"
             cells_html += f"""<div class="{cell_class}" onclick="openDaySummary({day})" style="cursor:pointer;">
-                <div class="cal-daynum">{day}{wx_html}</div>
+                <div class="cal-daynum">{day}{wx_html}{di_html}</div>
                 <div class="cal-events">{stats_html}</div>
             </div>"""
 
@@ -3640,9 +3748,11 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
 
     events_json       = json.dumps(events_by_day).replace("</", "<\\/")
     roadworks_json    = json.dumps(roadworks_by_day).replace("</", "<\\/")
+    sports_json        = json.dumps(sports_by_day).replace("</", "<\\/")
     events_count_json = json.dumps(events_count_by_day).replace("</", "<\\/")
     is_past_json      = json.dumps(is_past_by_day).replace("</", "<\\/")
     weather_hourly_json = json.dumps(weather_hourly_by_day).replace("</", "<\\/")
+    disposable_income_json = json.dumps(disposable_income_by_day).replace("</", "<\\/")
     month_label       = f"{calendar.month_name[month]} {year}"
 
     html = f"""<!DOCTYPE html><html><head>
@@ -3684,10 +3794,16 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
                     text-transform:uppercase; letter-spacing:.02em; margin-top:1px; white-space:nowrap; }}
 .cal-stat-events {{ background:var(--orange-glow, rgba(232,82,10,.1)); }}
 .cal-stat-events .cal-stat-num:not(.cal-stat-empty) {{ color:#E8520A; }}
-.cal-stat-holidays .cal-stat-num:not(.cal-stat-empty) {{ color:#179948; }}
+.cal-stat-sport .cal-stat-num:not(.cal-stat-empty) {{ color:#179948; }}
 .cal-stat-roadworks .cal-stat-num:not(.cal-stat-empty) {{ color:#00457c; }}
+.cal-stat-sport[style*="cursor:pointer"] {{ background:rgba(23,153,72,.10); transition:background .15s; }}
+.cal-stat-sport[style*="cursor:pointer"]:hover {{ background:rgba(23,153,72,.18); }}
 .cal-daynum-wx {{ font-family:'DM Mono',monospace; font-weight:500; font-size:10px; color:#0284c7;
                    margin-left:auto; white-space:nowrap; }}
+.cal-daynum-di {{ font-family:'DM Mono',monospace; font-weight:600; font-size:9px; color:#179948;
+                   background:rgba(23,153,72,.12); padding:1px 6px; border-radius:999px;
+                   white-space:nowrap; }}
+.cal-daynum-di.cal-daynum-di-standalone {{ margin-left:auto; }}
 .cal-stat-roadworks[style*="cursor:pointer"] {{ background:rgba(0,69,124,.10); transition:background .15s; }}
 .cal-stat-roadworks[style*="cursor:pointer"]:hover {{ background:rgba(0,69,124,.18); }}
 .cal-stat-events[style*="cursor:pointer"] {{ transition:background .15s; }}
@@ -3760,9 +3876,11 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 <script>
 const EVENTS_BY_DAY       = {events_json};
 const ROADWORKS_BY_DAY    = {roadworks_json};
+const SPORTS_BY_DAY       = {sports_json};
 const EVENTS_COUNT_BY_DAY = {events_count_json};
 const IS_PAST_BY_DAY      = {is_past_json};
 const WEATHER_HOURLY_BY_DAY = {weather_hourly_json};
+const DISPOSABLE_INCOME_BY_DAY = {disposable_income_json};
 const MONTH_LABEL      = {json.dumps(month_label)};
 const RATING_COLORS = {{
   "Blockbuster": {{ bg: "rgba(23,153,72,.12)",  fg: "#0f7035" }},
@@ -3775,7 +3893,7 @@ const CLOSURE_COLORS = {{
   "unplanned": {{ bg: "rgba(220,38,38,.10)", fg: "#991b1b" }}
 }};
 let currentDay  = null;
-let currentMode = 'events';   // 'events' | 'roadworks'
+let currentMode = 'events';   // 'events' | 'roadworks' | 'sport'
 
 function esc(s) {{
   const d = document.createElement('div');
@@ -3807,6 +3925,14 @@ function openDayRoadworks(day) {{
   currentDay  = day;
   document.getElementById('modal-title').innerText = 'Travel — ' + day + ' ' + MONTH_LABEL;
   renderRoadworksList(day);
+  document.getElementById('modal-overlay').classList.add('open');
+}}
+
+function openDaySport(day) {{
+  currentMode = 'sport';
+  currentDay  = day;
+  document.getElementById('modal-title').innerText = 'Sport — ' + day + ' ' + MONTH_LABEL;
+  renderSportList(day);
   document.getElementById('modal-overlay').classList.add('open');
 }}
 
@@ -3921,30 +4047,53 @@ function openDaySummary(day) {{
     hint = 'Click Events above for the full list.';
   }}
   let weatherHtml = '';
-  if (hourly.length) {{
+  const diPct = DISPOSABLE_INCOME_BY_DAY[day];
+  const diBadge = (diPct !== undefined && diPct !== null)
+    ? '<span title="Payday for ' + diPct + '% of UK" style="margin-left:8px; font-family:\\'DM Mono\\',monospace; font-size:9px; font-weight:600; color:#179948; background:rgba(23,153,72,.12); padding:2px 8px; border-radius:999px; text-transform:none; letter-spacing:0;">Payday ' + diPct + '%</span>'
+    : '';
+  if (hourly.length || diBadge) {{
     weatherHtml =
-      '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#A0A7B4; text-transform:uppercase; letter-spacing:.05em; margin:0 0 6px;">Through the day</div>' +
-      '<div style="display:flex; gap:6px; margin-bottom:14px;">' +
-        hourly.map(function(h) {{
-          return '<div style="flex:1; background:#F4F5F7; border-radius:8px; padding:8px 4px; text-align:center;">' +
-            '<div style="font-family:\\'DM Mono\\',monospace; font-size:8px; color:#A0A7B4;">' + esc(h.time) + '</div>' +
-            '<div style="font-size:15px; margin:3px 0;">' + h.icon + '</div>' +
-            '<div style="font-family:\\'DM Sans\\',sans-serif; font-weight:700; font-size:11px; color:#141518;">' + h.temp + '°</div>' +
-          '</div>';
-        }}).join('') +
+      '<div style="display:flex; align-items:center; margin:0 0 6px;">' +
+        '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#A0A7B4; text-transform:uppercase; letter-spacing:.05em;">Through the day</div>' +
+        diBadge +
       '</div>';
+    if (hourly.length) {{
+      weatherHtml +=
+        '<div style="display:flex; gap:6px; margin-bottom:14px;">' +
+          hourly.map(function(h) {{
+            return '<div style="flex:1; background:#F4F5F7; border-radius:8px; padding:8px 4px; text-align:center;">' +
+              '<div style="font-family:\\'DM Mono\\',monospace; font-size:8px; color:#A0A7B4;">' + esc(h.time) + '</div>' +
+              '<div style="font-size:15px; margin:3px 0;">' + h.icon + '</div>' +
+              '<div style="font-family:\\'DM Sans\\',sans-serif; font-weight:700; font-size:11px; color:#141518;">' + h.temp + '°</div>' +
+            '</div>';
+          }}).join('') +
+        '</div>';
+    }} else {{
+      weatherHtml += '<div style="margin-bottom:14px;"></div>';
+    }}
   }}
   const chartHtml = buildEventsTimeChart(day);
+  // Same click-through the main calendar cells already have (openDay /
+  // openDayRoadworks) — only clickable when there's something to show and
+  // the day hasn't already passed, matching the hint text below.
+  const eventsClickable = nEvents > 0 && !isPast;
+  const travelClickable = nTravel > 0 && !isPast;
+  const eventsOnclick = eventsClickable
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDay(' + day + '); }}, 0);" style="cursor:pointer;"'
+    : '';
+  const travelOnclick = travelClickable
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDayRoadworks(' + day + '); }}, 0);" style="cursor:pointer;"'
+    : '';
   document.getElementById('modal-body').innerHTML =
     '<div style="padding:8px 2px;">' +
       weatherHtml +
       chartHtml +
       '<div style="display:flex; gap:10px; margin-bottom:4px;">' +
-        '<div style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
+        '<div' + eventsOnclick + ' style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
           '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#E8520A;">' + nEvents + '</div>' +
           '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Events</div>' +
         '</div>' +
-        '<div style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
+        '<div' + travelOnclick + ' style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
           '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#00457c;">' + nTravel + '</div>' +
           '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Travel</div>' +
         '</div>' +
@@ -3993,6 +4142,22 @@ function renderRoadworksList(day) {{
             '</div>';
   }});
   document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No travel linked to this day.</div>';
+}}
+
+function renderSportList(day) {{
+  const items = SPORTS_BY_DAY[day] || [];
+  let html = '';
+  items.forEach(function(s) {{
+    const sub = [s.time, s.venue, s.city].filter(Boolean).join(' · ');
+    html += '<div class="day-event-row">' +
+              '<div class="day-event-top">' +
+                '<div class="day-event-name">' + esc(s.name) + '</div>' +
+                (s.competition ? '<span class="rating-badge" style="background:rgba(23,153,72,.12);color:#0f7035;">' + esc(s.competition) + '</span>' : '') +
+              '</div>' +
+              (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
+            '</div>';
+  }});
+  document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No home fixtures for this local team on this day.</div>';
 }}
 
 function showDetail(day, idx) {{
@@ -4072,6 +4237,9 @@ function backToDay() {{
   if (currentMode === 'roadworks') {{
     document.getElementById('modal-title').innerText = 'Travel — ' + currentDay + ' ' + MONTH_LABEL;
     renderRoadworksList(currentDay);
+  }} else if (currentMode === 'sport') {{
+    document.getElementById('modal-title').innerText = 'Sport — ' + currentDay + ' ' + MONTH_LABEL;
+    renderSportList(currentDay);
   }} else {{
     document.getElementById('modal-title').innerText = 'Events — ' + currentDay + ' ' + MONTH_LABEL;
     renderDayList(currentDay);
@@ -4245,6 +4413,164 @@ def fetch_skiddle(lat, lon, radius, status, progress):
         progress.progress(0.5 + min(window / (total_windows * 2), 0.5))
         start_dt = end_dt
 
+    return events
+
+
+# =====================================================
+# FATSOMA
+# =====================================================
+# Unlike Ticketmaster/Skiddle, Fatsoma's public events API has no lat/lon/
+# radius filter parameter (confirmed against the working standalone scraper
+# this was adapted from — it only filters by date range and status). So
+# instead of guessing at an unverified geo query param, this pulls the full
+# nationwide sweep of active events for the search window and filters to
+# the search radius client-side afterward, the same bounding/precise-filter
+# pattern already used for roadworks in this file.
+#
+# The nationwide sweep itself is expensive (pages through the ENTIRE UK
+# dataset, month by month) and barely changes minute to minute, so it's
+# cached for 30 min — same reasoning as _fetch_nh_closures_cached below.
+# Only the (cheap) radius filter re-runs on every search.
+
+def _add_months(dt, months):
+    """Pure-stdlib month arithmetic (no dateutil dependency)."""
+    m = dt.month - 1 + months
+    y = dt.year + m // 12
+    m = m % 12 + 1
+    d = min(dt.day, calendar.monthrange(y, m)[1])
+    return dt.replace(year=y, month=m, day=d)
+
+
+def _fatsoma_month_ranges(start, end):
+    current = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    while current < end:
+        nxt = _add_months(current, 1)
+        yield current, min(nxt, end)
+        current = nxt
+
+
+def _fatsoma_get_page(start_dt, end_dt, page):
+    params = {
+        "filter[status]": "active",
+        "filter[health]": "null,active,postponed",
+        "filter[ends-at][gte]": start_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+        "filter[ends-at][lt]": end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+        "include": "page,location,categories",
+        "page[number]": page,
+        "page[size]": FATSOMA_PAGE_SIZE,
+        "sort": "relevance",
+    }
+    r = requests.get(FATSOMA_BASE_URL, headers=FATSOMA_HEADERS, params=params, timeout=60)
+    if r.status_code == 500:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fetch_fatsoma_events_cached(months_ahead):
+    """Nationwide sweep of all active Fatsoma events for the next
+    `months_ahead` months. Returns a list of dicts already shaped to match
+    the BurdySteupTest schema (same keys/casing as fetch_ticketmaster /
+    fetch_skiddle), minus radius filtering — that happens in fetch_fatsoma()
+    below, per search, on this cached list."""
+    start_date = datetime.now(timezone.utc)
+    end_date = _add_months(start_date, months_ahead)
+
+    all_events = {}
+    for start_dt, end_dt in _fatsoma_month_ranges(start_date, end_date):
+        page = 1
+        while True:
+            data = _fatsoma_get_page(start_dt, end_dt, page)
+            if data is None:
+                break
+            events = data.get("data", [])
+            if not events:
+                break
+
+            included = data.get("included", [])
+            pages_inc, locations_inc, categories_inc = {}, {}, {}
+            for item in included:
+                if item["type"] == "pages":
+                    pages_inc[item["id"]] = item
+                elif item["type"] == "locations":
+                    locations_inc[item["id"]] = item
+                elif item["type"] == "categories":
+                    categories_inc[item["id"]] = item
+
+            for event in events:
+                event_id = str(event["id"]).strip()
+                if event_id in all_events:
+                    continue
+
+                attrs = event["attributes"]
+                rel = event["relationships"]
+
+                venue, city, postcode = "", "", ""
+                latitude, longitude = None, None
+                if rel.get("location", {}).get("data"):
+                    loc_id = rel["location"]["data"]["id"]
+                    loc = locations_inc.get(loc_id, {}).get("attributes", {})
+                    venue = loc.get("name", "")
+                    city = loc.get("city", "")
+                    postcode = loc.get("postcode", "")
+                    latitude = loc.get("latitude")
+                    longitude = loc.get("longitude")
+
+                category = ""
+                cats = rel.get("categories", {}).get("data", [])
+                if cats:
+                    cat_id = cats[0]["id"]
+                    category = categories_inc.get(cat_id, {}).get("attributes", {}).get("name", "")
+
+                url = f"https://www.fatsoma.com/e/{attrs['vanity-name']}/{attrs['seo-name']}"
+                raw = str(attrs.get("name")) + str(attrs.get("starts-at"))
+
+                all_events[event_id] = {
+                    "ID":         event_id,
+                    "Name":       attrs.get("name"),
+                    "Date":       (attrs.get("starts-at") or "")[:10],
+                    "Time":       (attrs.get("starts-at") or "")[11:16],
+                    "Venue Name": venue,
+                    "Type":       category,
+                    "City":       city,
+                    "url":        url,
+                    "PostalCode": postcode,
+                    "Latitude":   latitude,
+                    "Longitude":  longitude,
+                    "event_hash": hashlib.md5(raw.encode()).hexdigest(),
+                }
+
+            page += 1
+            time.sleep(0.15)
+
+    return list(all_events.values())
+
+
+def fetch_fatsoma(lat, lon, radius, status, progress):
+    """Fetch all Fatsoma events within `radius` miles of (lat, lon).
+    Returns an event dict shaped like fetch_ticketmaster/fetch_skiddle's,
+    ready for upsert_batch()."""
+    status.text("Searching Fatsoma...")
+    all_events = _fetch_fatsoma_events_cached(MONTHS_AHEAD)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    events = {}
+    for e in all_events:
+        lat2, lon2 = e.get("Latitude"), e.get("Longitude")
+        if lat2 in (None, "") or lon2 in (None, ""):
+            continue
+        try:
+            dist = haversine_miles(lat, lon, float(lat2), float(lon2))
+        except (TypeError, ValueError):
+            continue
+        if dist > radius:
+            continue
+        row = dict(e)
+        row["last_seen_at"] = now_iso
+        events[e["ID"]] = row
+
+    progress.progress(0.75)
     return events
 
 
@@ -4470,9 +4796,15 @@ def _fetch_nh_closures_cached(subscription_key, closure_type, start, end):
 
 
 def fetch_roadworks(lat, lon, radius, status, progress):
-    """Fetch National Highways closures (planned + unplanned) near lat/lon
-    within `radius` miles. Mirrors the fetch_ticketmaster / fetch_skiddle
-    pattern: returns a list of summary dicts ready for storage."""
+    """Fetch National Highways closures (planned + unplanned) near lat/lon.
+    Mirrors the fetch_ticketmaster / fetch_skiddle pattern: returns a list of
+    summary dicts ready for storage.
+
+    NOTE: the `radius` parameter (the user's selected event search radius) is
+    intentionally ignored here — roadworks are always scoped to the fixed
+    ROADWORKS_RADIUS_MILES, regardless of what radius the user picked for
+    events. The parameter is kept so this still lines up with the
+    fetch_ticketmaster/fetch_skiddle/fetch_fatsoma call signature."""
     if not NH_API_KEY:
         status.text("⚠ Roadworks skipped — add NH_API_KEY to secrets")
         return []
@@ -4491,7 +4823,7 @@ def fetch_roadworks(lat, lon, radius, status, progress):
         end   = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
         try:
             for record in _fetch_nh_closures_cached(NH_API_KEY, ctype, start, end):
-                summary = summarize_roadworks_record(record, lat, lon, radius, ctype)
+                summary = summarize_roadworks_record(record, lat, lon, ROADWORKS_RADIUS_MILES, ctype)
                 # The unplanned/planned windows can both match an ongoing closure
                 # (or the API's own paging can resurface a record) — keep only the
                 # first sighting of a given record_id so we never send duplicate
@@ -4597,14 +4929,19 @@ def get_new_events_within_radius(lat, lon, radius, start_date, end_date):
     return nearby
 
 
-def get_roadworks_within_radius(lat, lon, radius):
+def get_roadworks_within_radius(lat, lon, radius=None):
     """Read closures from Supabase within a bounding box around (lat, lon),
-    then filter to the precise `radius` miles client-side. Previously this
-    pulled the ENTIRE roadworks table on every search before filtering —
-    fine when the table was small, but it only grows over time (every past
-    search adds more rows), so it got slower and slower. The bounding-box
-    pre-filter keeps the amount of data pulled roughly constant regardless
-    of how large the table gets."""
+    then filter to the precise radius client-side. Previously this pulled the
+    ENTIRE roadworks table on every search before filtering — fine when the
+    table was small, but it only grows over time (every past search adds more
+    rows), so it got slower and slower. The bounding-box pre-filter keeps the
+    amount of data pulled roughly constant regardless of how large the table
+    gets.
+
+    NOTE: `radius` (the user's selected event search radius) is accepted for
+    call-site compatibility but ignored — roadworks are always scoped to the
+    fixed ROADWORKS_RADIUS_MILES, independent of the event search radius."""
+    radius = ROADWORKS_RADIUS_MILES
     try:
         lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
         rows = table_fetch_bbox(
@@ -4652,6 +4989,68 @@ def get_roadworks_within_radius(lat, lon, radius):
         df = df.drop_duplicates(subset=dedup_cols, keep="first")
 
     df = df.sort_values("distance_miles")
+    return df
+
+
+SPORTS_TABLE = "team_sports"
+
+
+def get_sports_within_radius(lat, lon, radius):
+    """Read fixtures from the team_sports Supabase table within a bounding
+    box around (lat, lon), then filter to the precise `radius` miles
+    client-side — same bbox-then-haversine approach as
+    get_roadworks_within_radius. Queries BOTH the fixture's own
+    "Latitude"/"Longitude" columns (the home team's ground) AND its
+    "Away Latitude"/"Away Longitude" columns (the away team's own ground),
+    so a fixture shows up whether the searched postcode's local team is
+    playing at home OR away. The two bbox results are merged and deduped
+    on "ID" — a fixture could in principle match on both sides (two nearby
+    rivals), so this only ever surfaces it once, keeping whichever match
+    is closer."""
+    try:
+        lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
+        home_rows = table_fetch_bbox(
+            SPORTS_TABLE, "Latitude", "Longitude",
+            lat_min, lat_max, lon_min, lon_max,
+        )
+        away_rows = table_fetch_bbox(
+            SPORTS_TABLE, "Away Latitude", "Away Longitude",
+            lat_min, lat_max, lon_min, lon_max,
+        )
+    except Exception as e:
+        st.warning(f"Couldn't read {SPORTS_TABLE} from Supabase: {e}")
+        return pd.DataFrame()
+
+    nearby = {}  # ID -> row, keeping whichever side gives the shorter distance
+    for r in home_rows:
+        rlat, rlon = r.get("Latitude"), r.get("Longitude")
+        if rlat is None or rlon is None:
+            continue
+        dist = haversine_miles(lat, lon, rlat, rlon)
+        if dist <= radius:
+            row_id = r.get("ID")
+            existing = nearby.get(row_id)
+            if existing is None or dist < existing["distance_miles"]:
+                r = dict(r)
+                r["distance_miles"] = round(dist, 2)
+                nearby[row_id] = r
+
+    for r in away_rows:
+        rlat, rlon = r.get("Away Latitude"), r.get("Away Longitude")
+        if rlat is None or rlon is None:
+            continue
+        dist = haversine_miles(lat, lon, rlat, rlon)
+        if dist <= radius:
+            row_id = r.get("ID")
+            existing = nearby.get(row_id)
+            if existing is None or dist < existing["distance_miles"]:
+                r = dict(r)
+                r["distance_miles"] = round(dist, 2)
+                nearby[row_id] = r
+
+    df = pd.DataFrame(list(nearby.values()))
+    if not df.empty:
+        df = df.sort_values("distance_miles")
     return df
 
 
@@ -4756,6 +5155,16 @@ if find_events:
             st.error(str(e))
             sk_count = 0
 
+        # ── FATSOMA ──
+        try:
+            fs_events = fetch_fatsoma(lat, lon, radius, status, progress)
+            fs_count, fs_new = upsert_batch(fs_events)
+            new_events_count += fs_new
+            status.text(f"✓ Fatsoma: {fs_count} events processed")
+        except RuntimeError as e:
+            st.error(str(e))
+            fs_count = 0
+
         # ── ROADWORKS (National Highways) ──
         rw_count = 0
         rw_new   = 0
@@ -4795,6 +5204,9 @@ if find_events:
 
         # Read back everything within radius (fresh inserts + anything already stored)
         st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
+
+        # Home fixtures for the local team(s), for the calendar's Sport box
+        st.session_state["sports_df"] = get_sports_within_radius(lat, lon, radius)
 
         # All-time (incl. historical) events within radius, for accurate
         # past-day counts in the calendar — the live search below only
@@ -4903,9 +5315,9 @@ if find_events:
                 "so-new-today":      f"New Events Added Today within {radius} miles",
                 "so-today":          f"Events Today within {radius} miles",
                 "so-week":           f"Events This Week within {radius} miles",
-                "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
-                "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
-                "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+                "so-rw-added-today": f"New Travel Disruptions Added Today within {ROADWORKS_RADIUS_MILES} mile",
+                "so-rw-today":       f"Travel Disruptions Today within {ROADWORKS_RADIUS_MILES} mile",
+                "so-rw-week":        f"Travel Disruptions This Week within {ROADWORKS_RADIUS_MILES} mile",
             },
         )
 
@@ -4962,6 +5374,9 @@ if search_db:
             # Search doesn't hit the National Highways API (that only happens on Fetch & Sync)
             st.session_state["roadworks_df"] = get_roadworks_within_radius(lat, lon, radius)
 
+            # Home fixtures for the local team(s), for the calendar's Sport box
+            st.session_state["sports_df"] = get_sports_within_radius(lat, lon, radius)
+
             # All-time (incl. historical) events within radius, for accurate
             # past-day counts in the calendar — the live search above only
             # returns current/future events by design.
@@ -5014,9 +5429,9 @@ if search_db:
                     "so-new-today":      f"New Events Added Today within {radius} miles",
                     "so-today":          f"Events Today within {radius} miles",
                     "so-week":           f"Events This Week within {radius} miles",
-                    "so-rw-added-today": f"New Travel Disruptions Added Today within {radius} miles",
-                    "so-rw-today":       f"Travel Disruptions Today within {radius} miles",
-                    "so-rw-week":        f"Travel Disruptions This Week within {radius} miles",
+                    "so-rw-added-today": f"New Travel Disruptions Added Today within {ROADWORKS_RADIUS_MILES} mile",
+                    "so-rw-today":       f"Travel Disruptions Today within {ROADWORKS_RADIUS_MILES} mile",
+                    "so-rw-week":        f"Travel Disruptions This Week within {ROADWORKS_RADIUS_MILES} mile",
                 },
             )
 
@@ -5033,6 +5448,7 @@ if not _results_committed:
     st.session_state["filtered_df"]   = pd.DataFrame()
     st.session_state["search_label"]  = ""
     st.session_state["roadworks_df"]  = pd.DataFrame()
+    st.session_state["sports_df"]     = pd.DataFrame()
     stats_slot.markdown(
         _stat_row_initial(_initial_total, _initial_today, _initial_this_week,
                            _initial_roadworks_today, _initial_roadworks_week),
@@ -5327,6 +5743,7 @@ if not df.empty:
             lat=st.session_state.get("_search_lat"),
             lon=st.session_state.get("_search_lon"),
             all_events_df=st.session_state.get("all_events_df", pd.DataFrame()),
+            sports_df=st.session_state.get("sports_df", pd.DataFrame()),
         )
 
 # Hide the loading overlay only now — after whichever pipeline ran (Fetch &
