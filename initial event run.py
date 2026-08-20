@@ -13,7 +13,6 @@ from io import BytesIO
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
 import streamlit.components.v1 as components
-st.error("DEBUG BUILD MARKER — if you see this, the edited file is running")
 
 # =====================================================
 # PAGE CONFIG
@@ -3608,6 +3607,8 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
         _sp_venue_col = _sp_col_lower.get("venue name")
         _sp_city_col  = _sp_col_lower.get("city")
         _sp_comp_col  = _sp_col_lower.get("competition")
+        _sp_type_col  = (_sp_col_lower.get("type") or _sp_col_lower.get("sport")
+                         or _sp_col_lower.get("sport type") or _sp_col_lower.get("category"))
         if _sp_date_col:
             for _, sp in sports_df.iterrows():
                 d = _parse_date_safe(sp.get(_sp_date_col))
@@ -3623,6 +3624,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
                     "venue":       str(sp.get(_sp_venue_col) or "") if _sp_venue_col else "",
                     "city":        str(sp.get(_sp_city_col) or "") if _sp_city_col else "",
                     "competition": str(sp.get(_sp_comp_col) or "") if _sp_comp_col else "",
+                    "type":        str(sp.get(_sp_type_col) or "") if _sp_type_col else "",
                 }
                 sports_by_day.setdefault(d.day, []).append(entry)
 
@@ -4200,17 +4202,32 @@ function renderRoadworksList(day) {{
 function renderSportList(day) {{
   const items = SPORTS_BY_DAY[day] || [];
   let html = '';
-  items.forEach(function(s) {{
-    const sub = [s.time, s.venue, s.city].filter(Boolean).join(' · ');
-    html += '<div class="day-event-row">' +
+  items.forEach(function(s, idx) {{
+    const sub = [s.time, s.competition, s.venue, s.city].filter(Boolean).join(' · ');
+    html += '<div class="day-event-row" onclick="showSportDetail(' + day + ',' + idx + ')">' +
               '<div class="day-event-top">' +
                 '<div class="day-event-name">' + esc(s.name) + '</div>' +
-                (s.competition ? '<span class="rating-badge" style="background:rgba(23,153,72,.12);color:#0f7035;">' + esc(s.competition) + '</span>' : '') +
+                (s.type ? '<span class="rating-badge" style="background:rgba(23,153,72,.12);color:#0f7035;">' + esc(s.type) + '</span>' : '') +
               '</div>' +
               (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
             '</div>';
   }});
   document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No home fixtures for this local team on this day.</div>';
+}}
+
+function showSportDetail(day, idx) {{
+  const s = (SPORTS_BY_DAY[day] || [])[idx];
+  if (!s) return;
+  document.getElementById('modal-title').innerText = 'Fixture Details';
+  let html = '<div class="back-link" onclick="backToDay()">‹ Back to ' + day + ' ' + MONTH_LABEL + '</div>';
+  html += '<div class="detail-name">' + esc(s.name) + '</div>';
+  if (s.type)        html += '<div class="detail-field"><div class="detail-label">Type</div><div class="detail-value">' + esc(s.type) + '</div></div>';
+  if (s.competition) html += '<div class="detail-field"><div class="detail-label">Competition</div><div class="detail-value">' + esc(s.competition) + '</div></div>';
+  if (s.venue)        html += '<div class="detail-field"><div class="detail-label">Venue</div><div class="detail-value">' + esc(s.venue) + '</div></div>';
+  if (s.city)         html += '<div class="detail-field"><div class="detail-label">City</div><div class="detail-value">' + esc(s.city) + '</div></div>';
+  if (s.time)         html += '<div class="detail-field"><div class="detail-label">Time</div><div class="detail-value">' + esc(s.time) + '</div></div>';
+  html += '<div class="detail-field"><div class="detail-label">Date</div><div class="detail-value">' + day + ' ' + MONTH_LABEL + '</div></div>';
+  document.getElementById('modal-body').innerHTML = html;
 }}
 
 function renderShowsList(day) {{
@@ -5044,8 +5061,7 @@ def get_shows_within_radius(lat, lon, radius):
 
     try:
         nearby = _nearby_cinemas(lat, lon, radius)
-    except requests.RequestException as e:
-        st.warning(f"Film Chase API (cinemas): {e}")
+    except requests.RequestException:
         return pd.DataFrame()
 
     if not nearby:
@@ -5053,8 +5069,7 @@ def get_shows_within_radius(lat, lon, radius):
 
     try:
         film_titles = _fetch_film_chase_films_cached()
-    except requests.RequestException as e:
-        st.warning(f"Film Chase API (films): {e}")
+    except requests.RequestException:
         film_titles = {}
 
     headers = _film_chase_headers()
@@ -5069,8 +5084,7 @@ def get_shows_within_radius(lat, lon, radius):
             resp.raise_for_status()
             payload = resp.json()
             showtimes = payload.get("data", payload) if isinstance(payload, dict) else payload
-        except requests.RequestException as e:
-            st.warning(f"Film Chase API (showtimes for cinema {cid}): {e}")
+        except requests.RequestException:
             continue
 
         for s in (showtimes or []):
@@ -5402,7 +5416,6 @@ if find_events:
         # ── TICKETMASTER ──
         try:
             tm_events = fetch_ticketmaster(lat, lon, radius, status, progress)
-            st.write("Sample TM event:", next(iter(tm_events.values()), None))   # TEMP DEBUG
             tm_count, tm_new = upsert_batch(tm_events)
             new_events_count += tm_new
             status.text(f"✓ Ticketmaster: {tm_count} events processed")
@@ -5416,7 +5429,6 @@ if find_events:
         # ── SKIDDLE ──
         try:
             sk_events = fetch_skiddle(lat, lon, radius, status, progress)
-            st.write("Sample Skiddle event:", next(iter(sk_events.values()), None))   # TEMP DEBUG
             sk_count, sk_new = upsert_batch(sk_events, strip_keys=SKIDDLE_ONLY)
             new_events_count += sk_new
             status.text(f"✓ Skiddle: {sk_count} events processed")
@@ -5427,7 +5439,6 @@ if find_events:
         # ── FATSOMA ──
         try:
             fs_events = fetch_fatsoma(lat, lon, radius, status, progress)
-            st.write("Sample Fatsoma event:", next(iter(fs_events.values()), None))   # TEMP DEBUG
             fs_count, fs_new = upsert_batch(fs_events)
             new_events_count += fs_new
             status.text(f"✓ Fatsoma: {fs_count} events processed")
