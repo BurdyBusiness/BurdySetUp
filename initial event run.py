@@ -2989,10 +2989,16 @@ def upsert_batch(events_dict, strip_keys=None):
         for r in batch if r["ID"] in existing_ids
     ]
 
-    if new_rows:
-        supabase.table("BurdySteupTest").insert(new_rows).execute()
-    if update_rows:
-        supabase.table("BurdySteupTest").upsert(update_rows, on_conflict="ID").execute()
+    # Chunk the writes themselves, not just the ID lookup above — a single
+    # insert/upsert covering thousands of rows (e.g. Fatsoma's nationwide
+    # sweep) can trip Postgres's statement timeout. Writing in smaller
+    # batches keeps each individual request fast regardless of how large
+    # the overall batch is.
+    WRITE_CHUNK = 500
+    for i in range(0, len(new_rows), WRITE_CHUNK):
+        supabase.table("BurdySteupTest").insert(new_rows[i:i + WRITE_CHUNK]).execute()
+    for i in range(0, len(update_rows), WRITE_CHUNK):
+        supabase.table("BurdySteupTest").upsert(update_rows[i:i + WRITE_CHUNK], on_conflict="ID").execute()
 
     return len(batch), len(new_rows)
 
@@ -3754,7 +3760,9 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
                 di_class = "cal-daynum-di" if wx_html else "cal-daynum-di cal-daynum-di-standalone"
                 di_html = f'<span class="{di_class}" title="Payday for {di_pct_clean}% of UK">{di_pct_clean}%</span>'
 
-            stats_html = f"""<div class="cal-stat-grid">
+            past_class = " cal-stat-past" if is_past else ""
+
+            stats_html = f"""<div class="cal-stat-grid{past_class}">
                 <div class="cal-stat-box cal-stat-events"{events_onclick}{events_style}>
                     <div class="{events_num_class}">{events_val}</div>
                     <div class="cal-stat-label">Events</div>
@@ -3853,6 +3861,12 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
 .cal-stat-roadworks[style*="cursor:pointer"]:hover {{ background:rgba(0,69,124,.18); }}
 .cal-stat-events[style*="cursor:pointer"] {{ transition:background .15s; }}
 .cal-stat-events[style*="cursor:pointer"]:hover {{ background:rgba(232,82,10,.22); }}
+
+/* ── Past days: counts stay accurate, but every box renders in the same
+      plain grey rather than each type's accent color, since past days are
+      no longer clickable/actionable anyway. ── */
+.cal-stat-grid.cal-stat-past .cal-stat-box {{ background:#F4F5F7 !important; }}
+.cal-stat-grid.cal-stat-past .cal-stat-num:not(.cal-stat-empty) {{ color:#141518 !important; }}
 
 /* ── Modal ── */
 .modal-overlay {{ display:none; position:absolute; inset:0; background:rgba(20,21,24,.55);
@@ -4089,6 +4103,8 @@ function openDaySummary(day) {{
   currentDay  = day;
   const nEvents = EVENTS_COUNT_BY_DAY[day] || 0;
   const nTravel = (ROADWORKS_BY_DAY[day] || []).length;
+  const nSport  = (SPORTS_BY_DAY[day] || []).length;
+  const nShows  = (SHOWS_BY_DAY[day] || []).length;
   const isPast  = !!IS_PAST_BY_DAY[day];
   const hourly  = WEATHER_HOURLY_BY_DAY[day] || [];
   document.getElementById('modal-title').innerText = day + ' ' + MONTH_LABEL;
@@ -4129,29 +4145,44 @@ function openDaySummary(day) {{
   }}
   const chartHtml = buildEventsTimeChart(day);
   // Same click-through the main calendar cells already have (openDay /
-  // openDayRoadworks) — only clickable when there's something to show and
-  // the day hasn't already passed, matching the hint text below.
-  const eventsClickable = nEvents > 0 && !isPast;
-  const travelClickable = nTravel > 0 && !isPast;
-  const eventsOnclick = eventsClickable
-    ? ' onclick="closeModal(); setTimeout(function(){{ openDay(' + day + '); }}, 0);" style="cursor:pointer;"'
+  // openDayRoadworks) — always clickable (even at 0, where the destination
+  // list just shows its own "nothing on this day" message) as long as the
+  // day hasn't already passed.
+  const clickableNow = !isPast;
+  const eventsOnclick = clickableNow
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDay(' + day + '); }}, 0);"'
     : '';
-  const travelOnclick = travelClickable
-    ? ' onclick="closeModal(); setTimeout(function(){{ openDayRoadworks(' + day + '); }}, 0);" style="cursor:pointer;"'
+  const travelOnclick = clickableNow
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDayRoadworks(' + day + '); }}, 0);"'
     : '';
+  const sportOnclick = clickableNow
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDaySport(' + day + '); }}, 0);"'
+    : '';
+  const showsOnclick = clickableNow
+    ? ' onclick="closeModal(); setTimeout(function(){{ openDayShows(' + day + '); }}, 0);"'
+    : '';
+  // A single style attribute (rather than a separate one tacked onto
+  // onclickAttr) — two "style" attributes on the same element is invalid
+  // HTML, and browsers silently keep only the first one, which was
+  // dropping this box's background/padding on every clickable box.
+  const summaryBox = function(onclickAttr, color, value, label) {{
+    const cursor = onclickAttr ? 'cursor:pointer;' : '';
+    return '<div' + onclickAttr + ' style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;' + cursor + '">' +
+             '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:' + color + ';">' + value + '</div>' +
+             '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">' + label + '</div>' +
+           '</div>';
+  }};
   document.getElementById('modal-body').innerHTML =
     '<div style="padding:8px 2px;">' +
       weatherHtml +
       chartHtml +
+      '<div style="display:flex; gap:10px; margin-bottom:8px;">' +
+        summaryBox(eventsOnclick, '#E8520A', nEvents, 'Events') +
+        summaryBox(travelOnclick, '#00457c', nTravel, 'Travel') +
+      '</div>' +
       '<div style="display:flex; gap:10px; margin-bottom:4px;">' +
-        '<div' + eventsOnclick + ' style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
-          '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#E8520A;">' + nEvents + '</div>' +
-          '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Events</div>' +
-        '</div>' +
-        '<div' + travelOnclick + ' style="flex:1; background:#F4F5F7; border-radius:10px; padding:14px; text-align:center;">' +
-          '<div style="font-family:\\'Syne\\',sans-serif; font-weight:800; font-size:20px; color:#00457c;">' + nTravel + '</div>' +
-          '<div style="font-family:\\'DM Mono\\',monospace; font-size:9px; color:#6B7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px;">Travel</div>' +
-        '</div>' +
+        summaryBox(sportOnclick, '#179948', nSport, 'Sport') +
+        summaryBox(showsOnclick, '#7c3aed', nShows, 'Shows') +
       '</div>' +
       '<div style="font-family:\\'DM Sans\\',sans-serif; font-size:11px; color:#A0A7B4; text-align:center; margin-top:10px;">' +
         hint +
@@ -4177,7 +4208,7 @@ function renderDayList(day) {{
               (sub ? '<div class="day-event-sub">' + esc(sub) + '</div>' : '') +
             '</div>';
   }});
-  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal-body').innerHTML = html || '<div class="day-event-sub">No events listed for this day.</div>';
 }}
 
 function renderRoadworksList(day) {{
@@ -4393,7 +4424,6 @@ def fetch_ticketmaster(lat, lon, radius, status, progress):
                 raise RuntimeError(f"Ticketmaster API error {res.status_code}")
 
             data        = res.json()
-            data        = res.json()
             total_pages = min(data.get("page", {}).get("totalPages", 1), TM_MAX_PAGES)
 
             for e in data.get("_embedded", {}).get("events", []):
@@ -4595,13 +4625,16 @@ def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
     month_windows  = list(_fatsoma_month_ranges(start_date, end_date))
     total_windows  = max(1, len(month_windows))
 
-    all_events = {}
+    all_events      = {}
+    total_processed = 0
+    total_new       = 0
     for window_idx, (start_dt, end_dt) in enumerate(month_windows, start=1):
         if _progress is not None:
             # Fatsoma's slice of the overall bar runs 0.5 -> 0.75 (TM/Skiddle
             # already cover 0 -> 0.5, roadworks covers 0.75 -> 1.0), mirroring
             # the fixed 0.75 checkpoint fetch_fatsoma() used to jump straight to.
             _progress.progress(0.5 + 0.25 * (window_idx / total_windows))
+        month_events = {}
         page = 1
         while True:
             if _status is not None:
@@ -4626,7 +4659,7 @@ def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
 
             for event in events:
                 event_id = str(event["id"]).strip()
-                if event_id in all_events:
+                if event_id in all_events or event_id in month_events:
                     continue
 
                 attrs = event["attributes"]
@@ -4652,7 +4685,7 @@ def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
                 url = f"https://www.fatsoma.com/e/{attrs['vanity-name']}/{attrs['seo-name']}"
                 raw = str(attrs.get("name")) + str(attrs.get("starts-at"))
 
-                all_events[event_id] = {
+                month_events[event_id] = {
                     "ID":         event_id,
                     "Name":       attrs.get("name"),
                     "Date":       (attrs.get("starts-at") or "")[:10],
@@ -4670,34 +4703,39 @@ def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
             page += 1
             time.sleep(0.15)
 
-    return list(all_events.values())
+        # Upsert this month's events to Supabase as soon as the window is
+        # done, rather than waiting for the entire 24-month nationwide sweep
+        # to finish — so if a later month hangs or errors, everything fetched
+        # so far is already saved instead of being lost. last_seen_at is
+        # stamped per-month, right before that month's own upsert, rather
+        # than at the very end — there is no bulk re-upsert of the full
+        # nationwide list afterward (that used to time out Postgres on a
+        # large sweep; see upsert_batch's own chunking for the general fix,
+        # but Fatsoma no longer needs a second full-list write at all).
+        if month_events:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for row in month_events.values():
+                row["last_seen_at"] = now_iso
+            count, new_count = upsert_batch(month_events)
+            total_processed += count
+            total_new       += new_count
+            all_events.update(month_events)
+
+    return list(all_events.values()), total_processed, total_new
 
 
 def fetch_fatsoma(lat, lon, radius, status, progress):
-    """Fetch all Fatsoma events within `radius` miles of (lat, lon).
-    Returns an event dict shaped like fetch_ticketmaster/fetch_skiddle's,
-    ready for upsert_batch()."""
+    """Fetch all Fatsoma events found by the initial search (unlike
+    fetch_ticketmaster/fetch_skiddle, Fatsoma's own search isn't
+    postcode/radius-scoped, so every event it returns is added/updated in
+    Supabase regardless of distance from (lat, lon)). Upserting happens
+    entirely inside _fetch_fatsoma_events_cached, incrementally per month —
+    this just runs/reuses that cached sweep and returns its (processed, new)
+    counts for the caller to report; there is no bulk upsert here."""
     status.text("Searching Fatsoma...")
-    all_events = _fetch_fatsoma_events_cached(MONTHS_AHEAD, _status=status, _progress=progress)
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    events = {}
-    for e in all_events:
-        lat2, lon2 = e.get("Latitude"), e.get("Longitude")
-        if lat2 in (None, "") or lon2 in (None, ""):
-            continue
-        try:
-            dist = haversine_miles(lat, lon, float(lat2), float(lon2))
-        except (TypeError, ValueError):
-            continue
-        if dist > radius:
-            continue
-        row = dict(e)
-        row["last_seen_at"] = now_iso
-        events[e["ID"]] = row
-
+    _, fs_count, fs_new = _fetch_fatsoma_events_cached(MONTHS_AHEAD, _status=status, _progress=progress)
     progress.progress(0.75)
-    return events
+    return fs_count, fs_new
 
 
 # =====================================================
@@ -4853,13 +4891,11 @@ def fetch_nh_closures(subscription_key, closure_type=None, start=None, end=None)
             time.sleep(0.5)  # courtesy pause between pages
 
 
-def summarize_roadworks_record(record, ref_lat, ref_lon, radius_miles, closure_type):
+def summarize_roadworks_record(record, ref_lat, ref_lon, closure_type):
     node = record.get("sitRoadOrCarriagewayOrLaneManagement", record)
     location_ref = node.get("locationReference", {})
     points = _extract_points(location_ref)
     best_point, distance = _nearest_point(ref_lat, ref_lon, points)
-    if distance is None or distance > radius_miles:
-        return None
 
     validity = node.get("validity", {})
     time_spec = validity.get("validityTimeSpecification", {})
@@ -4871,7 +4907,7 @@ def summarize_roadworks_record(record, ref_lat, ref_lon, radius_miles, closure_t
     return {
         "record_id":     _stable_record_id(node, location_ref),
         "closure_type":  closure_type,
-        "distance_miles": round(distance, 2),
+        "distance_miles": round(distance, 2) if distance is not None else None,
         "road":          road,
         "location":      desc,
         "status":        validity.get("validityStatus"),
@@ -4922,14 +4958,15 @@ def _fetch_nh_closures_cached(subscription_key, closure_type, start, end):
 
 
 def fetch_roadworks(lat, lon, radius, status, progress):
-    """Fetch National Highways closures (planned + unplanned) near lat/lon.
+    """Fetch ALL National Highways closures (planned + unplanned) nationwide.
     Mirrors the fetch_ticketmaster / fetch_skiddle pattern: returns a list of
     summary dicts ready for storage.
 
-    NOTE: the `radius` parameter (the user's selected event search radius) is
-    intentionally ignored here — roadworks are always scoped to the fixed
-    ROADWORKS_RADIUS_MILES, regardless of what radius the user picked for
-    events. The parameter is kept so this still lines up with the
+    NOTE: the `lat`/`lon`/`radius` parameters are no longer used to filter
+    results — every closure returned by the national feed is upserted to
+    Supabase, not just the ones near the searched postcode. `distance_miles`
+    is still computed relative to (lat, lon) for display purposes. The
+    parameters are kept so this still lines up with the
     fetch_ticketmaster/fetch_skiddle/fetch_fatsoma call signature."""
     if not NH_API_KEY:
         status.text("⚠ Roadworks skipped — add NH_API_KEY to secrets")
@@ -4949,7 +4986,7 @@ def fetch_roadworks(lat, lon, radius, status, progress):
         end   = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
         try:
             for record in _fetch_nh_closures_cached(NH_API_KEY, ctype, start, end):
-                summary = summarize_roadworks_record(record, lat, lon, ROADWORKS_RADIUS_MILES, ctype)
+                summary = summarize_roadworks_record(record, lat, lon, ctype)
                 # The unplanned/planned windows can both match an ongoing closure
                 # (or the API's own paging can resurface a record) — keep only the
                 # first sighting of a given record_id so we never send duplicate
@@ -5437,9 +5474,12 @@ if find_events:
             sk_count = 0
 
         # ── FATSOMA ──
+        # fetch_fatsoma upserts incrementally per month inside its own cached
+        # sweep and returns the resulting counts directly — no separate
+        # upsert_batch call here (that used to re-upsert the entire
+        # nationwide list a second time and was what timed out Postgres).
         try:
-            fs_events = fetch_fatsoma(lat, lon, radius, status, progress)
-            fs_count, fs_new = upsert_batch(fs_events)
+            fs_count, fs_new = fetch_fatsoma(lat, lon, radius, status, progress)
             new_events_count += fs_new
             status.text(f"✓ Fatsoma: {fs_count} events processed")
         except RuntimeError as e:
