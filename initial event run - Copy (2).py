@@ -4,10 +4,8 @@ import time
 import pandas as pd
 import hashlib
 import calendar
-import ctypes
 import json
 import math
-import os
 import re
 import urllib.parse
 from PIL import Image
@@ -804,34 +802,6 @@ FILM_CHASE_HOST  = "film-chase1.p.rapidapi.com"
 FILM_CHASE_BASE  = f"https://{FILM_CHASE_HOST}"
 SHOWS_DAYS_AHEAD = 14   # cinema showtimes: how far ahead to keep for the calendar's Shows box
 
-# ODEON / Vista OCAPI scraper — nationwide showtime refresh, independent of
-# postcode/radius. Triggered from the Weekly Refresh button; writes into the
-# Shows Supabase table (new-lines-only upsert, see upsert_shows below).
-ODEON_TOKEN_SOURCE_URL = "https://www.odeon.co.uk/cinemas/"
-ODEON_SITES_URL        = "https://www.odeon.co.uk/api/omnia/v1/pageList"
-ODEON_PRICES_URL       = "https://www.odeon.co.uk/api/omnia/v1/ticket-prices"
-ODEON_OCAPI_BASE       = "https://vwc.odeon.co.uk/WSVistaWebClient/ocapi/v1/"
-ODEON_SHOWS_DAYS_AHEAD = 60   # real scheduled dates to pull per cinema (not calendar days)
-SHOWS_TABLE            = "Shows"
-
-# Generic venues table — the one true source of location/metadata for every
-# venue-shaped thing this app touches (pubs, hotels, cinemas, ...), keyed on
-# (brand, site_id) for chains with a real site_id (Odeon/Vue) or
-# (brand, postcode, name) otherwise. See venues_schema.sql.
-VENUES_TABLE = "venues"
-
-# Vue showtime scraper — same idea as ODEON above, writes into the same
-# Shows table. Vue's site has no single "list all cinemas" API, so cinema
-# metadata (name/postcode/lat/lon) is discovered by walking the sitemap and
-# reading each cinema's own page once, then upserted into the Venues table
-# (brand='Vue') — addresses essentially never change, so this is only
-# rebuilt when Venues has no Vue rows yet, rather than on every Weekly
-# Refresh click.
-VUE_BASE                 = "https://www.myvue.com/api/microservice/showings/"
-VUE_SITEMAP_URL          = "https://www.myvue.com/sitemap.xml"
-VUE_MIN_EMBARGO_LEVEL    = 3   # matches the value seen in captured requests
-VUE_SHOWS_DAYS_AHEAD     = 14  # Vue's films endpoint only returns per-date, no discovery like ODEON's
-
 SKIDDLE_ONLY     = {"Genres", "Artists", "Distance", "Min Age", "Tickets URL", "source"}
 
 EVENTCODE_MAP = {
@@ -1187,7 +1157,7 @@ _hero_html = """
 _hero_html = _hero_html.replace("__SEARCH_COUNT__", str(get_search_log_count()))
 components.html(_hero_html, height=520, scrolling=False)
 
-col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 1.5, 1.5])
+col1, col2, col3, col4 = st.columns([2, 3, 1, 1.5])
 
 with col1:
     postcode = st.text_input("Enter postcode", placeholder="e.g. B2 5RE")
@@ -1199,9 +1169,6 @@ with col3:
 with col4:
     st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
     find_events = st.button("Refresh All", use_container_width=True)
-with col5:
-    st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-    weekly_refresh = st.button("Weekly Refresh", use_container_width=True)
 
 # ── Inject location button into the postcode text input via parent DOM ──
 components.html("""
@@ -2574,8 +2541,6 @@ def burdy_error(message, title="Invalid Postcode"):
 _overlay_create_slot  = None  # dedicated placeholder for the one-time overlay creation
 _overlay_percent_slot = None  # separate, reused placeholder for percent updates only
 _overlay_message_slot = None  # separate, reused placeholder for message updates only
-_overlay_run_id       = None  # id of the run show_loading_overlay() last started, passed
-                               # through to hide_loading_overlay() — see note there on why
 
 
 def show_loading_overlay(message="Talking to Ticketmaster, Skiddle, Fatsoma and National Highways…"):
@@ -2585,34 +2550,14 @@ def show_loading_overlay(message="Talking to Ticketmaster, Skiddle, Fatsoma and 
     single reused placeholder (_overlay_create_slot) that update_loading_overlay()
     never touches — replacing this slot from an update call before the browser
     finishes loading/running this script would remove the overlay before it's
-    even created, so creation and updates use separate slots.
-
-    Each call mints a run id (window.parent.__burdyOverlayRunId) that the
-    matching hide_loading_overlay() call is later given back. Each of these
-    calls renders as its own components.html iframe, and Streamlit gives no
-    guarantee the browser loads/executes them in the same order Python
-    called them in — on a slow/loaded page the hide iframe has been observed
-    to finish loading and run BEFORE this show iframe does, which used to
-    leave the overlay stuck forever (hide found nothing to remove, then show
-    created it with nothing left to ever remove it). Tagging both sides with
-    the run id and checking window.parent.__burdyOverlayHiddenRunIds here
-    means a hide that already fired for this run is respected even if it
-    physically executed first — creation is skipped rather than racing it."""
-    global _overlay_create_slot, _overlay_run_id
+    even created, so creation and updates use separate slots."""
+    global _overlay_create_slot
     _overlay_create_slot = st.empty()
-    _overlay_run_id = str(time.time_ns())
-    run_id = _overlay_run_id
     safe = message.replace("'", "\\'").replace("\n", " ")
     with _overlay_create_slot.container():
         components.html(f"""
 <script>
 (function() {{
-  window.parent.__burdyOverlayHiddenRunIds = window.parent.__burdyOverlayHiddenRunIds || {{}};
-  if (window.parent.__burdyOverlayHiddenRunIds['{run_id}']) {{
-    return;  // hide_loading_overlay() for this run already ran first — don't resurrect it
-  }}
-  window.parent.__burdyOverlayRunId = '{run_id}';
-
   var old = window.parent.document.getElementById('burdy-loading-overlay');
   if (old) old.remove();
 
@@ -2784,30 +2729,21 @@ class _LoadingOverlayProxy:
 
 def hide_loading_overlay():
     """Remove the overlay injected by show_loading_overlay(), with a short
-    fade so it doesn't just vanish abruptly.
-
-    Also records this run's id as hidden (window.parent.__burdyOverlayHiddenRunIds)
-    BEFORE touching the DOM — see show_loading_overlay()'s docstring: its
-    iframe can end up executing after this one, and it checks that same flag
-    to skip re-creating an overlay this call already dismissed."""
+    fade so it doesn't just vanish abruptly."""
     global _overlay_message_slot
-    run_id = _overlay_run_id
     if _overlay_message_slot is None:
         _overlay_message_slot = st.empty()
     with _overlay_message_slot.container():
-        components.html(f"""
+        components.html("""
 <script>
-(function() {{
-  window.parent.__burdyOverlayHiddenRunIds = window.parent.__burdyOverlayHiddenRunIds || {{}};
-  window.parent.__burdyOverlayHiddenRunIds['{run_id}'] = true;
-
+(function() {
   var overlay = window.parent.document.getElementById('burdy-loading-overlay');
-  if (overlay) {{
+  if (overlay) {
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity .2s ease';
-    setTimeout(function() {{ overlay.remove(); }}, 200);
-  }}
-}})();
+    setTimeout(function() { overlay.remove(); }, 200);
+  }
+})();
 </script>
 """, height=1, scrolling=False)
 
@@ -3557,7 +3493,7 @@ table {{ width:100%; min-width:640px; border-collapse:collapse; background:#fff;
     return total_pages, page
 
 
-def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None, sports_df=None, shows_df=None, all_shows_df=None):
+def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_events_df=None, sports_df=None, shows_df=None):
     """Render a month-grid calendar view of events, grouped by their event_date.
     Days are clickable to show the full list of events; each event is clickable
     for more detail (venue, type, city, time, Impact Score/Rating, and a link if available).
@@ -3572,11 +3508,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
     "now" server-side), so past days would otherwise always show 0. sports_df
     (optional) is fixtures from the team_sports table already filtered to the
     search radius on the HOME team's ground only (see get_sports_within_radius),
-    bucketed by day and linked to the "Sport" stat box. shows_df is cinema
-    showtimes for the live "Shows" stat box (current/future only, same
-    server-side-filtered pattern as df). all_shows_df (optional) is shows_df's
-    all-time equivalent — same reasoning as all_events_df — used only for
-    accurate Shows counts on days that have already passed."""
+    bucketed by day and linked to the "Sport" stat box."""
     df = add_impact_scores(df)
 
     col_lower  = {c.lower(): c for c in df.columns}
@@ -3727,18 +3659,6 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
     for _showings in shows_by_day.values():
         _showings.sort(key=lambda e: e["time"])
 
-    # Past-day Shows counts: shows_df above only ever contains current/future
-    # showtimes (get_shows_within_radius drops anything before today by
-    # default), so use the separate all-time fetch here just for a count —
-    # same pattern as past_events_count_by_day above.
-    past_shows_count_by_day = {}
-    if all_shows_df is not None and not all_shows_df.empty:
-        for _, sh in all_shows_df.iterrows():
-            d = _parse_date_safe(sh.get("Date"))
-            if d is None or d.year != year or d.month != month:
-                continue
-            past_shows_count_by_day[d.day] = past_shows_count_by_day.get(d.day, 0) + 1
-
     weather_by_day = {}
     if lat is not None and lon is not None:
         forecast = fetch_weather_forecast(lat, lon)
@@ -3819,7 +3739,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             sport_style     = ' style="cursor:pointer;"' if n_sport and not is_past else ""
 
             day_shows    = shows_by_day.get(day, [])
-            n_shows      = past_shows_count_by_day.get(day, 0) if is_past else len(day_shows)
+            n_shows      = len(day_shows)
             shows_num_class = "cal-stat-num" if n_shows else "cal-stat-num cal-stat-empty"
             shows_val       = str(n_shows) if n_shows else "–"
             shows_onclick   = f' onclick="event.stopPropagation(); openDayShows({day})"' if not is_past else ""
@@ -3866,7 +3786,7 @@ def render_calendar(df, year, month, roadworks_df=None, lat=None, lon=None, all_
             # opens a lightweight day-summary placeholder — not the full
             # events list, which is reserved for clicking the Events box
             # specifically.
-            cell_class = "cal-cell" + (" cal-today" if is_today else "") + (" cal-cell-past" if is_past else "") + " cal-clickable"
+            cell_class = "cal-cell" + (" cal-today" if is_today else "") + " cal-clickable"
             cells_html += f"""<div class="{cell_class}" onclick="openDaySummary({day})" style="cursor:pointer;">
                 <div class="cal-daynum">{day}{wx_html}{di_html}</div>
                 <div class="cal-events">{stats_html}</div>
@@ -3946,8 +3866,7 @@ body {{ background:#F4F5F7; font-family:'DM Sans',sans-serif; }}
       plain grey rather than each type's accent color, since past days are
       no longer clickable/actionable anyway. ── */
 .cal-stat-grid.cal-stat-past .cal-stat-box {{ background:#F4F5F7 !important; }}
-.cal-stat-grid.cal-stat-past .cal-stat-num:not(.cal-stat-empty) {{ color:#6B7280 !important; }}
-.cal-cell-past .cal-daynum {{ color:#6B7280; }}
+.cal-stat-grid.cal-stat-past .cal-stat-num:not(.cal-stat-empty) {{ color:#141518 !important; }}
 
 /* ── Modal ── */
 .modal-overlay {{ display:none; position:absolute; inset:0; background:rgba(20,21,24,.55);
@@ -4659,12 +4578,7 @@ def _add_months(dt, months):
 
 
 def _fatsoma_month_ranges(start, end):
-    """Rolling ~monthly windows starting from `start`'s own day (truncated to
-    midnight, so the cache key in fetch_fatsoma stays stable across repeated
-    calls within the same day) — NOT the 1st of `start`'s month. Sweeping
-    from the 1st meant every "current month" window re-fetched days that had
-    already passed, e.g. re-pulling all of Aug 1-27 on a sweep run Aug 28."""
-    current = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    current = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     while current < end:
         nxt = _add_months(current, 1)
         yield current, min(nxt, end)
@@ -4689,147 +4603,139 @@ def _fatsoma_get_page(start_dt, end_dt, page):
     return r.json()
 
 
-# Manual cache for Fatsoma's per-month sweep — NOT st.cache_data. That
-# decorator replays any Streamlit UI calls (status.text(), progress.progress())
-# made during a cached run so they still show up on a later cache HIT, and
-# that replay throws CacheReplayClosureError for placeholders (like the
-# loading overlay's st.empty() slots) created outside the cached function.
-# A plain dict + manual TTL check sidesteps that entirely, since it's not
-# Streamlit machinery at all — so it's safe to show live page-by-page status
-# text on every real (cache-miss) fetch, same as before caching was added.
-# Keyed by (start_iso, end_iso); month windows are stable within a given day
-# (see _fatsoma_month_ranges' midnight truncation) so this stays a small,
-# ~fixed-size dict rather than growing unbounded — it just rolls forward by
-# one entry each new day rather than being perfectly static.
-_FATSOMA_MONTH_CACHE_TTL = 1800  # seconds, same as the old st.cache_data ttl
-_fatsoma_month_cache = {}        # {(start_iso, end_iso): (fetched_at, True)} — events
-                                  # themselves aren't kept here, just a "swept recently"
-                                  # marker; they're already in Supabase via upsert_batch
+@st.cache_data(ttl=1800, show_spinner=False)
+def _fetch_fatsoma_events_cached(months_ahead, _status=None, _progress=None):
+    """Nationwide sweep of all active Fatsoma events for the next
+    `months_ahead` months. Returns a list of dicts already shaped to match
+    the BurdySteupTest schema (same keys/casing as fetch_ticketmaster /
+    fetch_skiddle), minus radius filtering — that happens in fetch_fatsoma()
+    below, per search, on this cached list.
 
+    `_status`/`_progress` (leading underscore so Streamlit's cache_data
+    doesn't try to hash them) are the same status/progress objects
+    fetch_ticketmaster uses, so a cache MISS shows the same live
+    "Searching Fatsoma (Mon YYYY — page N)" feedback in the loading overlay,
+    updated on every page request within every month window.
+    On a cache HIT this function body never runs, so no update fires —
+    that's fine, the outer fetch_fatsoma() call already sets a message
+    before calling in either case."""
+    start_date = datetime.now(timezone.utc)
+    end_date = _add_months(start_date, months_ahead)
 
-def _fetch_fatsoma_month(start_dt, end_dt, status=None, month_label=""):
-    """Live page-by-page sweep of all active Fatsoma events for ONE month
-    window — always a real fetch (caching/TTL is handled by the caller).
-    Returns (month_events_dict, count, new_count)."""
-    month_events = {}
-    page = 1
-    while True:
-        if status is not None:
-            status.text(f"Searching Fatsoma ({month_label} — page {page})")
-        data = _fatsoma_get_page(start_dt, end_dt, page)
-        if data is None:
-            break
-        events = data.get("data", [])
-        if not events:
-            break
+    month_windows  = list(_fatsoma_month_ranges(start_date, end_date))
+    total_windows  = max(1, len(month_windows))
 
-        included = data.get("included", [])
-        pages_inc, locations_inc, categories_inc = {}, {}, {}
-        for item in included:
-            if item["type"] == "pages":
-                pages_inc[item["id"]] = item
-            elif item["type"] == "locations":
-                locations_inc[item["id"]] = item
-            elif item["type"] == "categories":
-                categories_inc[item["id"]] = item
+    all_events      = {}
+    total_processed = 0
+    total_new       = 0
+    for window_idx, (start_dt, end_dt) in enumerate(month_windows, start=1):
+        if _progress is not None:
+            # Fatsoma's slice of the overall bar runs 0.5 -> 0.75 (TM/Skiddle
+            # already cover 0 -> 0.5, roadworks covers 0.75 -> 1.0), mirroring
+            # the fixed 0.75 checkpoint fetch_fatsoma() used to jump straight to.
+            _progress.progress(0.5 + 0.25 * (window_idx / total_windows))
+        month_events = {}
+        page = 1
+        while True:
+            if _status is not None:
+                _status.text(f"Searching Fatsoma "
+                             f"({start_dt.strftime('%b %Y')} — page {page})")
+            data = _fatsoma_get_page(start_dt, end_dt, page)
+            if data is None:
+                break
+            events = data.get("data", [])
+            if not events:
+                break
 
-        for event in events:
-            event_id = str(event["id"]).strip()
-            if event_id in month_events:
-                continue
+            included = data.get("included", [])
+            pages_inc, locations_inc, categories_inc = {}, {}, {}
+            for item in included:
+                if item["type"] == "pages":
+                    pages_inc[item["id"]] = item
+                elif item["type"] == "locations":
+                    locations_inc[item["id"]] = item
+                elif item["type"] == "categories":
+                    categories_inc[item["id"]] = item
 
-            attrs = event["attributes"]
-            rel = event["relationships"]
+            for event in events:
+                event_id = str(event["id"]).strip()
+                if event_id in all_events or event_id in month_events:
+                    continue
 
-            venue, city, postcode = "", "", ""
-            latitude, longitude = None, None
-            if rel.get("location", {}).get("data"):
-                loc_id = rel["location"]["data"]["id"]
-                loc = locations_inc.get(loc_id, {}).get("attributes", {})
-                venue = loc.get("name", "")
-                city = loc.get("city", "")
-                postcode = loc.get("postcode", "")
-                latitude = loc.get("latitude")
-                longitude = loc.get("longitude")
+                attrs = event["attributes"]
+                rel = event["relationships"]
 
-            category = ""
-            cats = rel.get("categories", {}).get("data", [])
-            if cats:
-                cat_id = cats[0]["id"]
-                category = categories_inc.get(cat_id, {}).get("attributes", {}).get("name", "")
+                venue, city, postcode = "", "", ""
+                latitude, longitude = None, None
+                if rel.get("location", {}).get("data"):
+                    loc_id = rel["location"]["data"]["id"]
+                    loc = locations_inc.get(loc_id, {}).get("attributes", {})
+                    venue = loc.get("name", "")
+                    city = loc.get("city", "")
+                    postcode = loc.get("postcode", "")
+                    latitude = loc.get("latitude")
+                    longitude = loc.get("longitude")
 
-            url = f"https://www.fatsoma.com/e/{attrs['vanity-name']}/{attrs['seo-name']}"
-            raw = str(attrs.get("name")) + str(attrs.get("starts-at"))
+                category = ""
+                cats = rel.get("categories", {}).get("data", [])
+                if cats:
+                    cat_id = cats[0]["id"]
+                    category = categories_inc.get(cat_id, {}).get("attributes", {}).get("name", "")
 
-            month_events[event_id] = {
-                "ID":         event_id,
-                "Name":       attrs.get("name"),
-                "Date":       (attrs.get("starts-at") or "")[:10],
-                "Time":       (attrs.get("starts-at") or "")[11:16],
-                "Venue Name": venue,
-                "Type":       category,
-                "City":       city,
-                "url":        url,
-                "PostalCode": postcode,
-                "Latitude":   latitude,
-                "Longitude":  longitude,
-                "event_hash": hashlib.md5(raw.encode()).hexdigest(),
-            }
+                url = f"https://www.fatsoma.com/e/{attrs['vanity-name']}/{attrs['seo-name']}"
+                raw = str(attrs.get("name")) + str(attrs.get("starts-at"))
 
-        page += 1
-        time.sleep(0.15)
+                month_events[event_id] = {
+                    "ID":         event_id,
+                    "Name":       attrs.get("name"),
+                    "Date":       (attrs.get("starts-at") or "")[:10],
+                    "Time":       (attrs.get("starts-at") or "")[11:16],
+                    "Venue Name": venue,
+                    "Type":       category,
+                    "City":       city,
+                    "url":        url,
+                    "PostalCode": postcode,
+                    "Latitude":   latitude,
+                    "Longitude":  longitude,
+                    "event_hash": hashlib.md5(raw.encode()).hexdigest(),
+                }
 
-    # Upsert this month's events to Supabase as soon as the window is done,
-    # rather than waiting for the entire nationwide sweep to finish — so if a
-    # later month hangs or errors, everything fetched so far is already
-    # saved instead of being lost.
-    count, new_count = 0, 0
-    if month_events:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        for row in month_events.values():
-            row["last_seen_at"] = now_iso
-        count, new_count = upsert_batch(month_events)
+            page += 1
+            time.sleep(0.15)
 
-    return month_events, count, new_count
+        # Upsert this month's events to Supabase as soon as the window is
+        # done, rather than waiting for the entire 24-month nationwide sweep
+        # to finish — so if a later month hangs or errors, everything fetched
+        # so far is already saved instead of being lost. last_seen_at is
+        # stamped per-month, right before that month's own upsert, rather
+        # than at the very end — there is no bulk re-upsert of the full
+        # nationwide list afterward (that used to time out Postgres on a
+        # large sweep; see upsert_batch's own chunking for the general fix,
+        # but Fatsoma no longer needs a second full-list write at all).
+        if month_events:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for row in month_events.values():
+                row["last_seen_at"] = now_iso
+            count, new_count = upsert_batch(month_events)
+            total_processed += count
+            total_new       += new_count
+            all_events.update(month_events)
+
+    return list(all_events.values()), total_processed, total_new
 
 
 def fetch_fatsoma(lat, lon, radius, status, progress):
     """Fetch all Fatsoma events found by the initial search (unlike
     fetch_ticketmaster/fetch_skiddle, Fatsoma's own search isn't
     postcode/radius-scoped, so every event it returns is added/updated in
-    Supabase regardless of distance from (lat, lon)). Each month is swept
-    fresh (with live page-by-page status text) unless _fatsoma_month_cache
-    already has a result for that window less than _FATSOMA_MONTH_CACHE_TTL
-    old, in which case it's skipped — same 30-min effective caching as
-    before, just done manually instead of via st.cache_data (see the cache's
-    own comment above for why)."""
-    start_date = datetime.now(timezone.utc)
-    end_date = _add_months(start_date, MONTHS_AHEAD)
-    month_windows = list(_fatsoma_month_ranges(start_date, end_date))
-    total_windows = max(1, len(month_windows))
-
-    total_processed = 0
-    total_new = 0
-    now_ts = time.time()
-    for window_idx, (start_dt, end_dt) in enumerate(month_windows, start=1):
-        month_label = start_dt.strftime("%b %Y")
-        # Fatsoma's slice of the overall bar runs 0.5 -> 0.75 (TM/Skiddle
-        # already cover 0 -> 0.5, roadworks covers 0.75 -> 1.0).
-        progress.progress(0.5 + 0.25 * (window_idx / total_windows))
-
-        cache_key = (start_dt.isoformat(), end_dt.isoformat())
-        cached = _fatsoma_month_cache.get(cache_key)
-        if cached is not None and (now_ts - cached[0]) < _FATSOMA_MONTH_CACHE_TTL:
-            status.text(f"Searching Fatsoma ({month_label} — cached)")
-            continue
-
-        _, count, new_count = _fetch_fatsoma_month(start_dt, end_dt, status=status, month_label=month_label)
-        _fatsoma_month_cache[cache_key] = (now_ts, True)
-        total_processed += count
-        total_new += new_count
-
+    Supabase regardless of distance from (lat, lon)). Upserting happens
+    entirely inside _fetch_fatsoma_events_cached, incrementally per month —
+    this just runs/reuses that cached sweep and returns its (processed, new)
+    counts for the caller to report; there is no bulk upsert here."""
+    status.text("Searching Fatsoma...")
+    _, fs_count, fs_new = _fetch_fatsoma_events_cached(MONTHS_AHEAD, _status=status, _progress=progress)
     progress.progress(0.75)
-    return total_processed, total_new
+    return fs_count, fs_new
 
 
 # =====================================================
@@ -5175,771 +5081,77 @@ def _nearby_cinemas(lat, lon, radius):
     return nearby
 
 
-# =====================================================
-# ODEON CINEMA SHOWTIMES (Vista OCAPI scraper)
-# =====================================================
-# Nationwide scrape of every ODEON cinema's showtimes, run from the Weekly
-# Refresh button. Unlike Ticketmaster/Skiddle/Fatsoma above, this isn't
-# scoped to the searched postcode/radius — it refreshes the whole UK ODEON estate
-# into the Shows table, upserting new lines only (existing rows keep their
-# first_seen_at, last_seen_at is refreshed on every run — same pattern as
-# upsert_batch above, just against the Shows table with showtime_id as the
-# conflict key).
-#
-# ODEON's site now requires a short-lived Bearer token for Vista OCAPI
-# rather than accepting requests based on Origin/Referer alone. That token
-# is embedded server-side in any odeon.co.uk page's window.initialData
-# blob (valid ~12h), so _odeon_fetch_auth_token grabs it from the cinemas
-# listing page before making any OCAPI calls.
-
-def _odeon_make_session():
-    session = requests.Session()
-    session.headers.update({
-        "Accept": "application/json",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Connect-Region-Code": "UK",
-        "Origin": "https://www.odeon.co.uk",
-        "Referer": "https://www.odeon.co.uk/",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/151.0.0.0 Safari/537.36"
-        ),
-    })
-    return session
-
-
-def _odeon_fetch_auth_token(session):
-    r = session.get(ODEON_TOKEN_SOURCE_URL, timeout=30)
-    r.raise_for_status()
-
-    marker = "window.initialData ="
-    marker_pos = r.text.find(marker)
-    if marker_pos == -1:
-        raise RuntimeError(
-            "Couldn't find window.initialData on the ODEON cinemas page; "
-            "ODEON may have changed how it embeds the Vista auth token."
-        )
-
-    json_start = marker_pos + len(marker)
-    while r.text[json_start].isspace():
-        json_start += 1
-    data, _ = json.JSONDecoder().raw_decode(r.text, json_start)
-
-    token = (data.get("api") or {}).get("authToken")
-    if not token:
-        raise RuntimeError("window.initialData had no api.authToken field.")
-    return token
-
-
-def _odeon_authenticated_session():
-    session = _odeon_make_session()
-    token = _odeon_fetch_auth_token(session)
-    session.headers.update({
-        "Authorization": f"Bearer {token}",
-        "Connect-Region-Code": "UK",
-    })
-    return session
-
-
-def _odeon_get_json(session, url, params=None, retries=3):
-    last_error = None
-    for attempt in range(retries):
-        try:
-            r = session.get(url, params=params, timeout=30)
-            if r.status_code == 204:
-                return {}
-            r.raise_for_status()
-            return r.json()
-        except Exception as exc:
-            last_error = exc
-            if attempt + 1 < retries:
-                time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"GET failed: {url} params={params}: {last_error}")
-
-
-def _odeon_text_value(value):
-    """Vista uses Translatable objects in some responses."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        if value.get("text"):
-            return value["text"]
-        translations = value.get("translations") or []
-        for t in translations:
-            if t.get("languageTag", "").lower() in ("en-gb", "en-us", "en"):
-                return t.get("text", "")
-        if translations:
-            return translations[0].get("text", "")
-    return ""
-
-
-def _odeon_build_index(items, key="id"):
-    return {
-        str(x.get(key)): x
-        for x in (items or [])
-        if isinstance(x, dict) and x.get(key) is not None
-    }
-
-
-def _odeon_get_related(data, name):
-    related = data.get("relatedData") or {}
-    return related.get(name) or []
-
-
-def _odeon_get_all_sites(session):
-    """Every ODEON cinema's Vista site ID, name, postcode and lat/lon."""
-    data = _odeon_get_json(
-        session,
-        ODEON_SITES_URL,
-        params={
-            "friendly": "/cinemas/",
-            "properties": ["vistaCinema", "name", "postCode", "latitude", "longitude"],
-        },
-    )
-    sites = []
-    for item in data or []:
-        vista = item.get("vistaCinema") or {}
-        site_id = vista.get("key")
-        name = item.get("name")
-        if site_id and name:
-            sites.append({
-                "site_id": site_id,
-                "name": name,
-                "postcode": item.get("postCode", ""),
-                "latitude": item.get("latitude", ""),
-                "longitude": item.get("longitude", ""),
-            })
-    return sorted(sites, key=lambda x: x["name"])
-
-
-def _odeon_get_business_dates(session, site_id, days):
-    try:
-        data = _odeon_get_json(
-            session,
-            ODEON_OCAPI_BASE + "film-screening-dates",
-            params={"siteIds": site_id},
-        )
-        dates = []
-        for item in data.get("filmScreeningDates", []):
-            raw = item.get("businessDate", "")
-            if raw:
-                dates.append(raw[:10])
-        dates = sorted(set(dates))
-        today = datetime.now(timezone.utc).date().isoformat()
-        dates = [d for d in dates if d >= today]
-        if days:
-            dates = dates[:days]
-        if dates:
-            return dates
-    except Exception:
-        pass
-
-    start = datetime.now(timezone.utc).date()
-    return [(start + timedelta(days=i)).isoformat() for i in range(days)]
-
-
-def _odeon_extract_rows(data, site_id, business_date):
-    showtimes = data.get("showtimes") or []
-
-    film_index  = _odeon_build_index(_odeon_get_related(data, "films"))
-    event_index = _odeon_build_index(_odeon_get_related(data, "events"))
-    screen_index = _odeon_build_index(_odeon_get_related(data, "screens"))
-
-    rows = []
-    for st_ in showtimes:
-        schedule = st_.get("schedule") or {}
-        film_id = str(st_.get("filmId") or "")
-        actual_site_id = str(st_.get("siteId") or site_id)
-        screen_id = str(st_.get("screenId") or "")
-
-        starts_at = schedule.get("startsAt") or ""
-        film_starts_at = schedule.get("filmStartsAt") or ""
-        time_source = film_starts_at or starts_at
-        show_time = time_source[11:16] if len(time_source) >= 16 else time_source
-
-        film = film_index.get(film_id)
-        film_name = _odeon_text_value(film.get("title")) if film else ""
-        if not film_name:
-            event = event_index.get(film_id)
-            if event:
-                film_name = _odeon_text_value(event.get("name") or event.get("title"))
-
-        screen = screen_index.get(screen_id)
-        screen_name = ""
-        if screen:
-            screen_name = (
-                _odeon_text_value(screen.get("name"))
-                or screen.get("description", "")
-                or screen.get("id", "")
-            )
-
-        rows.append({
-            "site_id": actual_site_id,
-            "cinema_name": "",   # filled in by caller from site metadata
-            "business_date": schedule.get("businessDate", business_date)[:10],
-            "film_id": film_id,
-            "film_name": film_name,
-            "showtime_id": str(st_.get("id") or ""),
-            "start_time": show_time,
-            "starts_at": starts_at,
-            "film_starts_at": film_starts_at,
-            "screen_name": screen_name,
-            "is_sold_out": st_.get("isSoldOut", ""),
-            "is_3d": st_.get("requires3dGlasses", False),
-            "is_allocated_seating": st_.get("isAllocatedSeating", ""),
-        })
-    return rows
-
-
-def _odeon_fill_missing_film_names(session, site_id, rows):
-    missing_ids = sorted({r["film_id"] for r in rows if r["film_id"] and not r["film_name"]})
-    if not missing_ids:
-        return
-    try:
-        data = _odeon_get_json(session, f"{ODEON_OCAPI_BASE}sites/{site_id}/films")
-        film_index = _odeon_build_index(data.get("films") or [])
-        for row in rows:
-            if not row["film_name"]:
-                film = film_index.get(row["film_id"])
-                if film:
-                    row["film_name"] = _odeon_text_value(film.get("title"))
-    except Exception:
-        pass
-
-
-def _odeon_fetch_ticket_prices(session, site_id, business_date, film_ids):
-    if not film_ids:
-        return {}
-    try:
-        return _odeon_get_json(
-            session,
-            ODEON_PRICES_URL,
-            params={"businessDate": business_date, "siteId": site_id, "filmId": sorted(film_ids)},
-        ) or {}
-    except Exception:
-        return {}
-
-
-def _odeon_apply_ticket_prices(rows, prices):
-    for row in rows:
-        tiers = prices.get(row["showtime_id"]) or {}
-        adult = tiers.get("adult") or {}
-        row["adult_price"] = adult.get("price") or None
-
-
-def _odeon_scrape_site(session, site_id, days):
-    dates = _odeon_get_business_dates(session, site_id, days)
-
-    all_rows = []
-    for business_date in dates:
-        data = _odeon_get_json(
-            session,
-            f"{ODEON_OCAPI_BASE}showtimes/by-business-date/{business_date}",
-            params={"siteIds": site_id},
-        )
-        rows = _odeon_extract_rows(data, site_id, business_date)
-        _odeon_fill_missing_film_names(session, site_id, rows)
-
-        film_ids = {r["film_id"] for r in rows if r["film_id"]}
-        prices = _odeon_fetch_ticket_prices(session, site_id, business_date, film_ids)
-        _odeon_apply_ticket_prices(rows, prices)
-
-        all_rows.extend(rows)
-
-    # Dedupe in case Vista returns an overlapping record.
-    unique = {}
-    for row in all_rows:
-        unique[row["showtime_id"]] = row
-    return list(unique.values())
-
-
-def upsert_shows(rows):
-    """Upsert ODEON showtime rows into the Shows table, new-lines-only:
-    existing rows (matched on showtime_id) keep their first_seen_at and
-    just get last_seen_at + any changed fields refreshed; brand-new rows
-    get both timestamps set. Mirrors upsert_batch's split so callers can
-    report how many rows were genuinely new. Returns (total_processed, new_count)."""
-    if not rows:
-        return 0, 0
-
-    now = datetime.now(timezone.utc).isoformat()
-    for r in rows:
-        r["last_seen_at"] = now
-
-    all_ids = [r["showtime_id"] for r in rows if r["showtime_id"]]
-    existing_ids = set()
-    for i in range(0, len(all_ids), 100):
-        chunk = all_ids[i:i + 100]
-        resp = (
-            supabase.table(SHOWS_TABLE)
-            .select("showtime_id")
-            .in_("showtime_id", chunk)
-            .execute()
-        )
-        existing_ids.update(row["showtime_id"] for row in (resp.data or []))
-
-    new_rows, update_rows = [], []
-    for r in rows:
-        if not r["showtime_id"]:
-            continue
-        if r["showtime_id"] in existing_ids:
-            update_rows.append({k: v for k, v in r.items() if k != "first_seen_at" and v is not None})
-        else:
-            r["first_seen_at"] = now
-            new_rows.append(r)
-
-    WRITE_CHUNK = 500
-    for i in range(0, len(new_rows), WRITE_CHUNK):
-        supabase.table(SHOWS_TABLE).insert(new_rows[i:i + WRITE_CHUNK]).execute()
-    for i in range(0, len(update_rows), WRITE_CHUNK):
-        supabase.table(SHOWS_TABLE).upsert(update_rows[i:i + WRITE_CHUNK], on_conflict="showtime_id").execute()
-
-    return len(new_rows) + len(update_rows), len(new_rows)
-
-
-def upsert_venues(rows):
-    """Upsert venue metadata rows (type/brand/name/site_id/postcode/lat/lon)
-    into the generic Venues table. Rows with a site_id (chains like Odeon/Vue)
-    conflict on (brand, site_id); rows without one conflict on
-    (brand, postcode, name) — same split as venues_schema.sql's two unique
-    indexes."""
-    if not rows:
-        return
-    now = datetime.now(timezone.utc).isoformat()
-    for r in rows:
-        r["last_seen_at"] = now
-
-    with_id    = [r for r in rows if r.get("site_id")]
-    without_id = [r for r in rows if not r.get("site_id")]
-
-    WRITE_CHUNK = 500
-    for group, conflict_cols in ((with_id, "brand,site_id"), (without_id, "brand,postcode,name")):
-        for i in range(0, len(group), WRITE_CHUNK):
-            supabase.table(VENUES_TABLE).upsert(group[i:i + WRITE_CHUNK], on_conflict=conflict_cols).execute()
-
-
-def fetch_and_upsert_odeon_shows(status=None, progress=None):
-    """Full nationwide ODEON refresh — scrapes every cinema's showtimes via
-    Vista OCAPI and upserts new-lines-only into the Shows table. Independent
-    of postcode/radius, unlike the Ticketmaster/Skiddle/Fatsoma fetches
-    above; this is meant to run once per Weekly Refresh click and cover the
-    whole UK ODEON estate. Returns (total_processed, new_count)."""
-    session = _odeon_authenticated_session()
-    sites = _odeon_get_all_sites(session)
-
-    venue_rows = [{
-        "type": "Cinema",
-        "brand": "Odeon",
-        "site_id": site["site_id"],
-        "name": site["name"] if site["name"].lower().startswith("odeon") else f"Odeon {site['name']}",
-        "postcode": site.get("postcode") or None,
-        "latitude": site.get("latitude") or None,
-        "longitude": site.get("longitude") or None,
-    } for site in sites]
-    upsert_venues(venue_rows)
-
-    total_processed = 0
-    total_new = 0
-    for i, site in enumerate(sites, 1):
-        site_id, name = site["site_id"], site["name"]
-        if status is not None:
-            status.text(f"Odeon: {name} ({i}/{len(sites)})")
-        try:
-            rows = _odeon_scrape_site(session, site_id, ODEON_SHOWS_DAYS_AHEAD)
-            display_name = name if name.lower().startswith("odeon") else f"Odeon {name}"
-            for row in rows:
-                row["cinema_name"] = display_name
-                row["chain"]       = "Odeon"
-                row["postcode"]    = site.get("postcode") or None
-                row["latitude"]    = site.get("latitude") or None
-                row["longitude"]   = site.get("longitude") or None
-            processed, new = upsert_shows(rows)
-            total_processed += processed
-            total_new += new
-        except Exception as exc:
-            if status is not None:
-                status.text(f"⚠ Odeon: skipped {name} ({exc})")
-        if progress is not None:
-            progress.progress(i / len(sites))
-        time.sleep(0.5)
-
-    return total_processed, total_new
-
-
-# ---------------------------------------------------------------------------
-# Vue scraper — mirrors the ODEON section above; see VUE_* constants near the
-# top of the file. Vue's JSON microservices need a session cookie that's only
-# set by loading a real myvue.com page first (unlike ODEON, which just needs
-# a bearer token), and there's no single "list every cinema" endpoint, so
-# cinema metadata is scraped from each cinema's own page and upserted into
-# the Venues table (see upsert_venues).
-# ---------------------------------------------------------------------------
-
-VUE_CINEMA_PAGE_RE = re.compile(r"https://www\.myvue\.com/cinema/([a-z0-9\-]+)/whats-on", re.I)
-VUE_NEXT_DATA_RE = re.compile(
-    r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S
-)
-
-
-def _vue_make_session():
-    session = requests.Session()
-    session.headers.update({
-        "Accept": "application/json",
-        "Accept-Language": "en-GB,en;q=0.9",
-        "Origin": "https://www.myvue.com",
-        "Referer": "https://www.myvue.com/",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/151.0.0.0 Safari/537.36"
-        ),
-    })
-    return session
-
-
-def _vue_prime_session(session):
-    try:
-        r = session.get("https://www.myvue.com/", timeout=30)
-        r.raise_for_status()
-    except Exception:
-        pass  # best-effort — the API calls will surface a clearer error if this mattered
-    return session
-
-
-def _vue_get_json(session, url, params=None, retries=3):
-    last_error = None
-    for attempt in range(retries):
-        try:
-            r = session.get(url, params=params, timeout=30)
-            if r.status_code == 204:
-                return {}
-            r.raise_for_status()
-            return r.json()
-        except Exception as exc:
-            last_error = exc
-            if attempt + 1 < retries:
-                time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"GET failed: {url} params={params}: {last_error}")
-
-
-def _vue_discover_cinema_slugs(session):
-    """Walk sitemap.xml (and any nested sitemaps) for cinema whats-on URLs."""
-    to_visit = [VUE_SITEMAP_URL]
-    seen_sitemaps = set()
-    slugs = set()
-
-    while to_visit:
-        url = to_visit.pop()
-        if url in seen_sitemaps:
-            continue
-        seen_sitemaps.add(url)
-
-        try:
-            r = session.get(url, timeout=30)
-            r.raise_for_status()
-        except Exception:
-            continue
-
-        locs = re.findall(r"<loc>(.*?)</loc>", r.text, re.I)
-        for loc in locs:
-            if loc.endswith(".xml") and loc not in seen_sitemaps:
-                to_visit.append(loc)
-        for m in VUE_CINEMA_PAGE_RE.finditer(r.text):
-            slugs.add(m.group(1))
-
-    return sorted(slugs)
-
-
-def _vue_parse_cinema_page(html):
-    empty = {"site_id": "", "name": "", "postcode": "", "latitude": "", "longitude": ""}
-
-    m = VUE_NEXT_DATA_RE.search(html)
-    if not m:
-        return empty
-    try:
-        data = json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return empty
-
-    cinema = (
-        data.get("props", {})
-        .get("pageProps", {})
-        .get("layoutData", {})
-        .get("sitecore", {})
-        .get("context", {})
-        .get("cinema", {})
-    )
-
-    site_id = (cinema.get("cinemaId") or {}).get("value", "")
-    name = (cinema.get("cinemaName") or {}).get("value", "")
-
-    raw_address = (cinema.get("cinemaAddress") or {}).get("value", "")
-    lines = [l.strip() for l in re.split(r"\r?\n", raw_address) if l.strip()]
-    postcode = lines[-1] if lines else ""
-
-    raw_coords = (cinema.get("cinemaLocationCoordinates") or {}).get("value", "")
-    latitude, longitude = "", ""
-    if "," in raw_coords:
-        lat_str, lon_str = raw_coords.split(",", 1)
-        latitude, longitude = lat_str.strip(), lon_str.strip()
-
-    return {
-        "site_id": str(site_id),
-        "name": name,
-        "postcode": postcode,
-        "latitude": latitude,
-        "longitude": longitude,
-    }
-
-
-def _vue_build_cinema_table(session, status=None):
-    """Walks the sitemap + each cinema's own page to discover cinema
-    metadata, then upserts it into the generic Venues table (type='Cinema',
-    brand='Vue') so it's the shared source of truth rather than a local
-    cache file."""
-    slugs = _vue_discover_cinema_slugs(session)
-    table = {}
-    for i, slug in enumerate(slugs, 1):
-        if status is not None:
-            status.text(f"Vue: discovering cinemas ({i}/{len(slugs)})")
-        try:
-            r = session.get(f"https://www.myvue.com/cinema/{slug}/whats-on", timeout=30)
-            r.raise_for_status()
-            meta = _vue_parse_cinema_page(r.text)
-            if meta.get("site_id"):
-                table[meta["site_id"]] = meta
-        except Exception:
-            pass
-        time.sleep(0.3)
-
-    upsert_venues([{
-        "type": "Cinema",
-        "brand": "Vue",
-        "site_id": meta["site_id"],
-        "name": meta["name"] if meta["name"].lower().startswith("vue") else f"Vue {meta['name']}",
-        "postcode": meta.get("postcode") or None,
-        "latitude": meta.get("latitude") or None,
-        "longitude": meta.get("longitude") or None,
-    } for meta in table.values() if meta.get("name")])
-
-    return table
-
-
-def _vue_load_cinema_table(session, status=None):
-    """Cinema metadata (name/postcode/lat/lon per site_id) from the Venues
-    table, rebuilt by walking the sitemap only if there's nothing there yet
-    for brand='Vue' — cinema addresses don't change week to week, so there's
-    no need to re-walk the sitemap every Weekly Refresh."""
-    resp = (
-        supabase.table(VENUES_TABLE)
-        .select("site_id,name,postcode,latitude,longitude")
-        .eq("brand", "Vue")
-        .execute()
-    )
-    rows = resp.data or []
-    if rows:
-        return {r["site_id"]: r for r in rows}
-    return _vue_build_cinema_table(session, status)
-
-
-def _vue_get_business_dates(days):
-    start = datetime.now(timezone.utc).date()
-    return [(start + timedelta(days=i)).isoformat() for i in range(days)]
-
-
-def _vue_is_3d(attributes):
-    return any(
-        "3d" in str(a.get("value", "")).lower() or "3d" in str(a.get("name", "")).lower()
-        for a in (attributes or [])
-    )
-
-
-def _vue_parse_price(formatted_price):
-    """Vue's formattedPrice is a display string like '£10.99' — Shows'
-    adult_price column is double precision (matching ODEON's plain numeric
-    price), so strip the currency symbol before storing rather than pass
-    the raw string through and fail the insert."""
-    if not formatted_price:
-        return None
-    digits = re.sub(r"[^\d.]", "", str(formatted_price))
-    try:
-        return float(digits) if digits else None
-    except ValueError:
-        return None
-
-
-def _vue_extract_rows(data, site_id, business_date):
-    rows = []
-    for film in data.get("result") or []:
-        film_id = str(film.get("filmId") or "")
-        film_name = film.get("filmTitle") or ""
-
-        for group in film.get("showingGroups") or []:
-            group_date = (group.get("date") or business_date)[:10]
-            for s in group.get("sessions") or []:
-                starts_at = s.get("startTime") or ""
-                start_time = starts_at[11:16] if len(starts_at) >= 16 else starts_at
-
-                rows.append({
-                    "site_id": str(site_id),
-                    "cinema_name": "",   # filled in by caller from site metadata
-                    "business_date": group_date,
-                    "film_id": film_id,
-                    "film_name": film_name,
-                    "showtime_id": str(s.get("sessionId") or ""),
-                    "start_time": start_time,
-                    "starts_at": starts_at,
-                    "film_starts_at": starts_at,
-                    "screen_name": s.get("screenName", ""),
-                    "is_sold_out": s.get("isSoldOut", ""),
-                    "is_3d": _vue_is_3d(s.get("attributes")),
-                    "adult_price": _vue_parse_price(s.get("formattedPrice")),
-                })
-    return rows
-
-
-def _vue_scrape_site(session, site_id, days):
-    dates = _vue_get_business_dates(days)
-    all_rows = []
-    for business_date in dates:
-        try:
-            data = _vue_get_json(
-                session,
-                VUE_BASE + f"cinemas/{site_id}/films",
-                params={
-                    "showingDate": f"{business_date}T00:00:00",
-                    "minEmbargoLevel": VUE_MIN_EMBARGO_LEVEL,
-                    "includesSession": "true",
-                    "includeSessionAttributes": "true",
-                },
-            )
-            all_rows.extend(_vue_extract_rows(data, site_id, business_date))
-        except Exception:
-            continue
-    return all_rows
-
-
-def fetch_and_upsert_vue_shows(status=None, progress=None):
-    """Full nationwide Vue refresh — scrapes every Vue cinema's showtimes and
-    upserts new-lines-only into the Shows table, same as
-    fetch_and_upsert_odeon_shows above. Returns (total_processed, new_count)."""
-    session = _vue_make_session()
-    _vue_prime_session(session)
-    cinema_table = _vue_load_cinema_table(session, status)
-    sites = sorted(cinema_table.values(), key=lambda x: x.get("name", ""))
-
-    total_processed = 0
-    total_new = 0
-    for i, site in enumerate(sites, 1):
-        site_id, name = site["site_id"], site.get("name", "")
-        display_name = name if name.lower().startswith("vue") else f"Vue {name}"
-        if status is not None:
-            status.text(f"Vue: {display_name} ({i}/{len(sites)})")
-        try:
-            rows = _vue_scrape_site(session, site_id, VUE_SHOWS_DAYS_AHEAD)
-            for row in rows:
-                row["cinema_name"] = display_name
-                row["chain"]       = "Vue"
-                row["postcode"]    = site.get("postcode") or None
-                row["latitude"]    = site.get("latitude") or None
-                row["longitude"]   = site.get("longitude") or None
-            processed, new = upsert_shows(rows)
-            total_processed += processed
-            total_new += new
-        except Exception as exc:
-            if status is not None:
-                status.text(f"⚠ Vue: skipped {display_name} ({exc})")
-        if progress is not None:
-            progress.progress(i / len(sites))
-        time.sleep(0.5)
-
-    return total_processed, total_new
-
-
 @st.cache_data(ttl=900, show_spinner=False)
-def get_shows_within_radius(lat, lon, radius, include_past=False):
-    """Cinema showtimes (film, cinema, date, start time) from the Shows
-    Supabase table within `radius` miles of (lat, lon) — same bbox-then-
-    haversine approach as get_roadworks_within_radius/get_sports_within_radius,
-    so this behaves exactly like the Events search: everything the Odeon
-    scraper has stored for nearby cinemas (out to ODEON_SHOWS_DAYS_AHEAD),
-    not just a fixed short window from a live per-request API call. Cached
-    15 minutes, keyed on (lat, lon, radius, include_past).
+def get_shows_within_radius(lat, lon, radius):
+    """Cinema showtimes (film, cinema, date, start time) from the Film Chase
+    API within `radius` miles of (lat, lon), for the next SHOWS_DAYS_AHEAD
+    days. Cached 15 minutes, keyed on (lat, lon, radius) — same call is used
+    for both the Fetch & Sync pipeline and a plain Search, mirroring
+    get_sports_within_radius, so re-searching the same postcode doesn't
+    keep re-hitting RapidAPI.
 
-    include_past=False (the default, used for the live Shows box) drops any
-    showtime whose business_date has already passed. Pass include_past=True
-    to get the all-time equivalent instead — same idea as
-    get_all_time_events_within_radius, used only for accurate past-day
-    counts in the calendar, since the default view would otherwise always
-    show 0 for historical days.
+    Unlike roadworks, there's no separate Supabase table backing this —
+    showtimes are fetched live (through the cache above) rather than
+    stored and read back."""
+    if not CINEMA_API_KEY:
+        return pd.DataFrame()
 
-    Populated by fetch_and_upsert_odeon_shows via the Weekly Refresh button —
-    if that hasn't been run yet (or the Shows table is empty/missing), this
-    just returns an empty DataFrame."""
     try:
-        lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
-        rows = table_fetch_bbox(
-            SHOWS_TABLE, "latitude", "longitude",
-            lat_min, lat_max, lon_min, lon_max,
-            # Only pull the columns this function actually uses below — the
-            # Shows table also carries screen_name/starts_at/film_starts_at/
-            # is_3d/is_allocated_seating/first_seen_at/last_seen_at, which
-            # would otherwise be transferred and immediately discarded.
-            select="site_id,cinema_name,chain,postcode,latitude,longitude,business_date,"
-                   "film_id,film_name,showtime_id,start_time,is_sold_out,adult_price",
-        )
-    except Exception as e:
-        st.warning(f"Couldn't read {SHOWS_TABLE} from Supabase: {e}")
+        nearby = _nearby_cinemas(lat, lon, radius)
+    except requests.RequestException:
         return pd.DataFrame()
 
-    if not rows:
+    if not nearby:
         return pd.DataFrame()
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        film_titles = _fetch_film_chase_films_cached()
+    except requests.RequestException:
+        film_titles = {}
 
-    nearby = []
-    for r in rows:
-        rlat, rlon = r.get("latitude"), r.get("longitude")
-        if rlat is None or rlon is None:
+    headers = _film_chase_headers()
+    now     = datetime.now(timezone.utc)
+    cutoff  = now + timedelta(days=SHOWS_DAYS_AHEAD)
+
+    rows = []
+    for cinema in nearby:
+        cid = cinema.get("id")
+        try:
+            resp = requests.get(f"{FILM_CHASE_BASE}/showtimes/{cid}", headers=headers, timeout=15)
+            resp.raise_for_status()
+            payload = resp.json()
+            showtimes = payload.get("data", payload) if isinstance(payload, dict) else payload
+        except requests.RequestException:
             continue
-        business_date = r.get("business_date") or ""
-        if not include_past and business_date < today:
-            continue  # showtime has already passed
-        dist = haversine_miles(lat, lon, rlat, rlon)
-        if dist > radius:
-            continue
 
-        sold_out = r.get("is_sold_out")
-        if isinstance(sold_out, str):
-            sold_out = sold_out.strip().lower() == "true"
+        for s in (showtimes or []):
+            raw = s.get("showing_at")
+            if not raw:
+                continue
+            try:
+                showing_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if showing_at < now or showing_at > cutoff:
+                continue
 
-        nearby.append({
-            "showtime_id":    r.get("showtime_id"),
-            "film_id":        r.get("film_id"),
-            "Film":           r.get("film_name") or "Unknown film",
-            "cinema_id":      r.get("site_id"),
-            "Cinema":         r.get("cinema_name") or "",
-            "Chain":          r.get("chain") or "Odeon",
-            "Location":       r.get("postcode") or "",
-            "Date":           business_date,
-            "Time":           r.get("start_time") or "",
-            "booking_link":   "",
-            "sold_out":       bool(sold_out),
-            "adult_price":    r.get("adult_price"),
-            "distance_miles": round(dist, 2),
-        })
+            rows.append({
+                "showtime_id":    s.get("id"),
+                "film_id":        s.get("film_id"),
+                "Film":           film_titles.get(s.get("film_id"), "Unknown film"),
+                "cinema_id":      cid,
+                "Cinema":         cinema.get("name"),
+                "Chain":          cinema.get("chain"),
+                "Location":       cinema.get("address"),
+                "Date":           showing_at.strftime("%Y-%m-%d"),
+                "Time":           showing_at.strftime("%H:%M"),
+                "booking_link":   s.get("booking_link"),
+                "sold_out":       s.get("sold_out", False),
+                "distance_miles": cinema.get("distance_miles"),
+            })
 
-    df = pd.DataFrame(nearby)
+    df = pd.DataFrame(rows)
     if not df.empty:
-        # Same "keep the newest" defensive dedup as roadworks — if the
-        # Shows table ever ends up with duplicate showtime_ids (e.g. the
-        # upsert's on_conflict target isn't backed by a real unique
-        # constraint), don't let that surface as duplicate rows in the UI.
-        if "showtime_id" in df.columns:
-            df = df.drop_duplicates(subset="showtime_id", keep="first")
         df = df.sort_values(["Date", "Time"])
     return df
 
@@ -6101,7 +5313,6 @@ def get_roadworks_within_radius(lat, lon, radius=None):
 SPORTS_TABLE = "team_sports"
 
 
-@st.cache_data(ttl=900, show_spinner=False)
 def get_sports_within_radius(lat, lon, radius):
     """Read fixtures from the team_sports Supabase table within a bounding
     box around (lat, lon), then filter to the precise `radius` miles
@@ -6113,12 +5324,7 @@ def get_sports_within_radius(lat, lon, radius):
     playing at home OR away. The two bbox results are merged and deduped
     on "ID" — a fixture could in principle match on both sides (two nearby
     rivals), so this only ever surfaces it once, keeping whichever match
-    is closer.
-
-    Cached 15 minutes, keyed on (lat, lon, radius) — this previously had no
-    caching at all, unlike every other radius query in the file, despite
-    doing two full-column bbox pulls (home + away) on every Refresh All,
-    Search, and filter change."""
+    is closer."""
     try:
         lat_min, lat_max, lon_min, lon_max = _bounding_box(lat, lon, radius)
         home_rows = table_fetch_bbox(
@@ -6186,7 +5392,6 @@ def rpc_fetch_all(fn_name: str, params: dict, page_size: int = 1000) -> list:
     return all_rows
 
 
-@st.cache_data(ttl=900, show_spinner=False)
 def get_all_time_events_within_radius(lat, lon, radius, type_filters=None, venue_filters=None):
     """search_within_radius filters out anything before "now" server-side
     (see its WHERE clause), so the live search's filtered_df never contains
@@ -6194,15 +5399,7 @@ def get_all_time_events_within_radius(lat, lon, radius, type_filters=None, venue
     calls the exact same RPC, same radius/type/venue filters, but with a
     deliberately ancient now_utc so its date comparison never excludes a row.
     Used only to get accurate historical counts for past days in the
-    calendar; the live search itself is untouched.
-
-    Cached 15 minutes, keyed on (lat, lon, radius, type_filters, venue_filters)
-    — this is the single biggest bandwidth cost in the app (a full-history
-    radius pull, every column, on every Search/Refresh All click and every
-    filter change) despite only ever being used for a per-day COUNT. Every
-    other radius query here (roadworks/sports/shows) is already cached the
-    same way; this one wasn't, so repeat searches of the same postcode were
-    re-pulling the entire history within radius from Supabase every time."""
+    calendar; the live search itself is untouched."""
     params = {
         "lat": lat, "lng": lon, "radius_meters": radius * 1609.34,
         "now_utc": "1900-01-01T00:00:00+00:00",
@@ -6334,11 +5531,10 @@ if find_events:
         # Cinema showtimes near the searched postcode, for the calendar's Shows box
         st.session_state["shows_df"] = get_shows_within_radius(lat, lon, radius)
 
-        # All-time (incl. historical) events/shows within radius, for accurate
-        # past-day counts in the calendar — the live search/box above only
-        # returns current/future rows by design.
+        # All-time (incl. historical) events within radius, for accurate
+        # past-day counts in the calendar — the live search below only
+        # returns current/future events by design.
         st.session_state["all_events_df"] = get_all_time_events_within_radius(lat, lon, radius)
-        st.session_state["all_shows_df"] = get_shows_within_radius(lat, lon, radius, include_past=True)
 
         progress.progress(1.0)
 
@@ -6453,74 +5649,6 @@ if find_events:
             burdy_new_events_modal(st.session_state["newest_events"])
 
 # =====================================================
-# WEEKLY REFRESH (CINEMA SHOWTIMES — ODEON + VUE)
-# =====================================================
-# Standalone nationwide cinema scrape, split out of Refresh All since it's
-# independent of postcode/radius and slow enough to not want on every
-# search-driven refresh — run it manually on its own cadence instead. Both
-# chains upsert into the same Shows table (see chain column).
-
-_ES_CONTINUOUS       = 0x80000000
-_ES_SYSTEM_REQUIRED  = 0x00000001
-_ES_AWAYMODE_REQUIRED = 0x00000040
-
-
-def _prevent_system_sleep():
-    """Stop Windows from suspending the machine mid-refresh (e.g. laptop
-    idle timeout). This scrape runs for many minutes across hundreds of
-    cinemas on the local machine running `streamlit run` — if the OS
-    actually suspends (not just screensaver/lock, which is unaffected and
-    still fine), the process freezes and any open HTTP connections come
-    back stale on wake, hanging indefinitely rather than hitting their
-    timeout. Only blocks system sleep; display can still turn off.
-
-    ES_AWAYMODE_REQUIRED asks Windows to keep the machine fully powered/
-    running ("away mode" — as if someone's still using it) rather than
-    idle-suspending it, on top of ES_SYSTEM_REQUIRED's plain sleep block —
-    a laptop was still observed freezing mid-Vue-scrape under
-    ES_SYSTEM_REQUIRED alone once Windows dropped into battery-saving idle
-    behaviour. If the current driver/OS doesn't support away mode, this
-    flag is just ignored, so it's safe to always request."""
-    try:
-        ctypes.windll.kernel32.SetThreadExecutionState(
-            _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_AWAYMODE_REQUIRED
-        )
-    except Exception:
-        pass  # non-Windows or restricted environment — refresh still runs, just without the sleep guard
-
-
-def _allow_system_sleep():
-    try:
-        ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
-    except Exception:
-        pass
-
-
-if weekly_refresh:
-    show_loading_overlay("Refreshing cinema showtimes nationwide…")
-    _loading_active = True
-    progress = _LoadingOverlayProxy()
-    status   = _LoadingOverlayProxy()
-
-    _prevent_system_sleep()
-    try:
-        try:
-            od_count, od_new = fetch_and_upsert_odeon_shows(status, progress)
-            status.text(f"✓ Odeon: {od_count} showtimes processed ({od_new} new)")
-            st.success(f"Odeon refresh complete: {od_count} showtimes processed ({od_new} new)")
-        except Exception as e:
-            st.error(f"Odeon refresh failed: {e}")
-
-        try:
-            vue_count, vue_new = fetch_and_upsert_vue_shows(status, progress)
-            status.text(f"✓ Vue: {vue_count} showtimes processed ({vue_new} new)")
-            st.success(f"Vue refresh complete: {vue_count} showtimes processed ({vue_new} new)")
-        except Exception as e:
-            st.error(f"Vue refresh failed: {e}")
-    finally:
-        _allow_system_sleep()
-
-# =====================================================
 # SEARCH VIEW
 # =====================================================
 
@@ -6575,11 +5703,10 @@ if search_db:
             # Cinema showtimes near the searched postcode, for the calendar's Shows box
             st.session_state["shows_df"] = get_shows_within_radius(lat, lon, radius)
 
-            # All-time (incl. historical) events/shows within radius, for accurate
+            # All-time (incl. historical) events within radius, for accurate
             # past-day counts in the calendar — the live search above only
-            # returns current/future rows by design.
+            # returns current/future events by design.
             st.session_state["all_events_df"] = get_all_time_events_within_radius(lat, lon, radius)
-            st.session_state["all_shows_df"] = get_shows_within_radius(lat, lon, radius, include_past=True)
 
             log_search_event(
                 action="search",
@@ -6944,7 +6071,6 @@ if not df.empty:
             all_events_df=st.session_state.get("all_events_df", pd.DataFrame()),
             sports_df=st.session_state.get("sports_df", pd.DataFrame()),
             shows_df=st.session_state.get("shows_df", pd.DataFrame()),
-            all_shows_df=st.session_state.get("all_shows_df", pd.DataFrame()),
         )
 
 # Hide the loading overlay only now — after whichever pipeline ran (Fetch &

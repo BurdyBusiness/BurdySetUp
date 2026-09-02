@@ -7,4 +7,5 @@ textColor = "#000000"
 [theme.sidebar]
 backgroundColor = "#f0f2f6"
 
-[server] enableStaticServing = true
+[server]
+enableStaticServing = true
